@@ -2,8 +2,9 @@
 
 Astro 5 static site, built with Bun, deployed to GitHub Pages at https://xandreed.dev
 on every push to `main`. **No React, no framework JS** — hand-written CSS and two small
-inline scripts; the one exception is the lazy-loaded vanilla Three.js chunk for the
-`vector` style. That constraint is part of the site's identity, not an accident.
+inline scripts; the one exception is the lazy-loaded vanilla Three.js chunks for the
+`vector` and `sodium` styles. That constraint is part of the site's identity, not an
+accident.
 
 ## Commands
 
@@ -21,7 +22,7 @@ in dev. When touching the vector world or touch controls, test with real pointer
 
 | Path | Role |
 | --- | --- |
-| `src/layouts/Base.astro` | Head/SEO, font imports per style, FOUC-guard inline script, header + style switcher, copy-button injector, lazy vector bootstrap |
+| `src/layouts/Base.astro` | Head/SEO, font imports per style, FOUC-guard inline script, header + style switcher, copy-button injector, lazy world bootstrap |
 | `src/pages/index.astro` | Homepage — intro + posts grouped by UTC year |
 | `src/pages/posts/[id].astro` | Post page — TOC, reading time, tags, draft badge, older/newer nav |
 | `src/pages/tags/[tag].astro` | Tag listings (tags derived from non-draft posts in prod) |
@@ -32,14 +33,15 @@ in dev. When touching the vector world or touch controls, test with real pointer
 | `src/utils/posts.ts` | `getPosts()` (draft filter + desc sort), `isoDate`, `readingTime` |
 | `src/content.config.ts` | `posts` collection schema |
 | `src/styles/` | `global.css` = token contract + default style (phosphor); one file per other style |
-| `src/scripts/vector-world.js` | The 3D world (~1.5k lines), lazy-loaded only for `vector` |
+| `src/scripts/vector-world.js` | The flyable star system (~2.5k lines), lazy-loaded only for `vector` |
+| `src/scripts/sodium-world.js` | The night-drive game (~1.5k lines), lazy-loaded only for `sodium` |
 | `.github/workflows/deploy.yml` | Build with Bun (frozen lockfile) → upload-pages-artifact → deploy-pages |
 
 ## The style system (core invariant)
 
-Six design systems switched live via `data-style` on `<html>`: **phosphor** (default,
-dark), **gazette** (light), **aurora** (dark), **zine** (light), **system** (light),
-**vector** (dark). Choice persists in `localStorage.style`; first visit follows
+Seven design systems switched live via `data-style` on `<html>`: **phosphor**
+(default, dark), **gazette** (light), **aurora** (dark), **zine** (light),
+**system** (light), **vector** (dark), **sodium** (dark). Choice persists in `localStorage.style`; first visit follows
 `prefers-color-scheme` (light → gazette, dark → phosphor). A pre-paint inline script in
 `Base.astro` sets the attribute before first render — keep it inline and first.
 
@@ -114,7 +116,24 @@ Rules that keep it healthy:
   point-sampled — fast bolts tunnel through small targets otherwise.
 - Sound is synthesized WebAudio (`makeAudio`), created lazily on the first user
   gesture; `M` and the HUD button mute (persisted).
-- Keep it a lazy dynamic import — the other five styles must never pay for Three.js.
+- Keep it a lazy dynamic import — the other styles must never pay for Three.js.
+
+## Sodium world
+
+`sodium-world.js` follows the same mount/unmount contract via the `WORLDS` map in
+`Base.astro` (one world active at a time, swapped live by the switcher):
+
+- Drive-to-discover: billboards along the ring road render a scrambled "?" face
+  until the car gets within range; discovery persists (`sodium-found`), and reading
+  an article counts too. Car state round-trips via sessionStorage (`sodium-car`).
+- The lake uses `three/addons` `Water` with a procedurally generated normal map —
+  no texture assets anywhere; billboard faces and HUD textures are canvas-drawn
+  (redrawn after `document.fonts.load`, Michroma/Outfit).
+- The sky ShaderMaterial doubles as the PMREM environment so metals reflect the
+  horizon. The moon DirectionalLight follows the car texel-snapped to avoid
+  shadow shimmer. Mute persists in `sodium-mute`.
+- Scratch-vector discipline: the chase camera has a dedicated `camLook` — aliasing
+  `tmpV`/`fwd` here caused a camera bug once already.
 
 ## Deploy / domain
 

@@ -5,8 +5,9 @@ evals. Built alongside [efferent](https://github.com/xandreeddev/agent), an
 open-source coding agent on Effect.ts, which the posts draw their examples from.
 
 **No React. No framework JavaScript.** Hand-written CSS, two small inline scripts
-(style switcher, code-copy buttons), and one opt-in exception: the `vector` style
-lazy-loads a vanilla Three.js chunk and turns the site into a game.
+(style switcher, code-copy buttons), and one opt-in exception: the `vector` and
+`sodium` styles each lazy-load a vanilla Three.js chunk and turn the site into
+a game — a flyable star system and a night drive.
 
 ## Quickstart
 
@@ -45,7 +46,7 @@ draft: true # visible in dev; excluded from build, RSS, sitemap
 Code fences take `title="path/to/file.ts"` plus `[!code highlight]` and
 `[!code ++]` / `[!code --]` line notations.
 
-## Six design systems, one switcher
+## Seven design systems, one switcher
 
 The header switcher swaps the entire visual identity live — typography, layout,
 decoration, motion — not just a palette. Choice persists in `localStorage`;
@@ -59,6 +60,7 @@ first visit follows `prefers-color-scheme` (dark → phosphor, light → gazette
 | zine     | xerox riot         | Archivo · Space Mono          |
 | system   | retro desk         | Silkscreen · Chivo · Fragment |
 | vector   | context overworld  | VT323 · JetBrains Mono        |
+| sodium   | night drive        | Michroma · Outfit · Martian   |
 
 Each style is one file in `src/styles/` overriding the token contract declared
 in `global.css` (colors, fonts, radii, border weights) plus its own signature
@@ -90,5 +92,24 @@ them oldest → newest.
 
 Ship state and score survive article round-trips. The world reads the post
 list straight from the DOM, mounts and unmounts live with the switcher, and
-the other five styles never pay for it. No WebGL? The CRT fallback is a
+the other styles never pay for it. No WebGL? The CRT fallback is a
 complete theme on its own.
+
+## sodium: the night drive
+
+Pick **sodium** and the homepage becomes a nocturne you drive through: a ring
+road around a lake, lit by sodium streetlights under a custom-shader sky
+(stars, moon, a faint aurora). Every post is a billboard exit on the shoulder
+— dark static until you pull up close, when it boots into a glowing card.
+Discovery is the game: `docs n/m discovered`, persisted.
+
+- Real-time moonlight shadows (PCFSoft) that follow the car, planar-reflective
+  water with procedurally generated wave normals, wind turbines turning over
+  the lake, drifting clouds, fireflies, sky-matched reflections on the paint.
+- Arcade-honest car physics: lateral grip you can break with the handbrake
+  (`space`), suspension lean, speed-dependent steering, FOV that widens with
+  speed. `W` gas, `S` brake/reverse, `A/D` steer. Touch: stick steers, gas
+  latches, brake/drift hold.
+- Engine and tyre-skid audio synthesized in WebAudio — zero assets, `M` mutes.
+- Drive into the lake and you get fished out. The car position survives
+  article round-trips. Same lazy-chunk rule: only sodium pays for it.

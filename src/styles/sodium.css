@@ -1,0 +1,684 @@
+/* ---------------------------------------------------------------------------
+   SODIUM — night drive.
+   Sodium-vapor amber on deep asphalt blue. Glass cards, highway-sign post
+   rows, headlight sweeps. Michroma display (automotive badge lettering) over
+   Outfit body, Martian Mono for code. The 3D night-drive world
+   (sodium-world.js) mounts behind this on the homepage; everything here is
+   a complete theme on its own, so no-JS / no-WebGL still ships a design.
+--------------------------------------------------------------------------- */
+
+[data-style='sodium'] {
+  color-scheme: dark;
+
+  --font-body: 'Outfit Variable', system-ui, sans-serif;
+  --font-display: 'Michroma', 'Outfit Variable', sans-serif;
+  --font-mono: 'Martian Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --bg: oklch(14% 0.03 260);
+  --surface: oklch(18% 0.032 258);
+  --surface-2: oklch(22.5% 0.034 256);
+  --border: oklch(78% 0.14 60 / 0.22);
+  --text: oklch(94% 0.012 80);
+  --text-2: oklch(73% 0.02 75);
+  --text-3: oklch(56% 0.025 70);
+  --accent: oklch(78% 0.15 60);
+  --accent-dim: oklch(78% 0.15 60 / 0.12);
+  --ok-dim: oklch(75% 0.12 150 / 0.14);
+  --bad-dim: oklch(65% 0.15 25 / 0.14);
+
+  --sd-cyan: oklch(80% 0.12 210);
+  --sd-glow: 0 0 18px oklch(78% 0.15 60 / 0.35);
+
+  --radius-s: 8px;
+  --radius-m: 16px;
+  --border-w: 1px;
+  --display-weight: 400;
+}
+
+[data-style='sodium'] .brand-mark::before,
+[data-style='sodium'] .sw-glyph::before {
+  content: '◐';
+}
+
+/* night-sky body: sodium horizon glow rising from the bottom */
+[data-style='sodium'] body {
+  background:
+    radial-gradient(120% 60% at 50% 108%, oklch(45% 0.1 55 / 0.16), transparent 60%),
+    radial-gradient(80% 50% at 85% -10%, oklch(35% 0.07 250 / 0.35), transparent 70%),
+    linear-gradient(180deg, oklch(12% 0.028 262), oklch(15% 0.032 258));
+  background-attachment: fixed;
+}
+
+[data-style='sodium'] ::selection {
+  background: oklch(78% 0.15 60 / 0.3);
+}
+
+/* ----- header: glass bar with a headlight underline ----- */
+
+[data-style='sodium'] .site-header {
+  background: oklch(13% 0.03 260 / 0.7);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid oklch(78% 0.14 60 / 0.18);
+}
+
+[data-style='sodium'] .brand {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  letter-spacing: 0.14em;
+  text-transform: lowercase;
+  text-shadow: var(--sd-glow);
+}
+
+[data-style='sodium'] .site-nav a {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+}
+
+[data-style='sodium'] .site-nav a:hover,
+[data-style='sodium'] .site-nav a[aria-current='page'] {
+  color: var(--accent);
+  text-shadow: var(--sd-glow);
+}
+
+[data-style='sodium'] .style-menu {
+  background: oklch(14% 0.03 260 / 0.92);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 0 0 1px oklch(78% 0.14 60 / 0.14), 0 24px 60px oklch(0% 0 0 / 0.6);
+}
+
+/* ----- home: highway-sign post rows ----- */
+
+[data-style='sodium'] .intro p {
+  font-family: var(--font-display);
+  font-size: var(--step-2);
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+[data-style='sodium'] .intro .sub {
+  font-family: var(--font-body);
+  font-style: normal;
+  color: var(--text-2);
+}
+
+[data-style='sodium'] .year-group > .label {
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  letter-spacing: 0.3em;
+  color: var(--accent);
+  border-bottom: 0;
+}
+
+[data-style='sodium'] .year-group > .label::before {
+  content: 'route ';
+  color: var(--text-3);
+}
+
+[data-style='sodium'] .post-row {
+  position: relative;
+  overflow: hidden;
+  margin-top: 1rem;
+  padding: 1.1rem 1.25rem 1.1rem 1.4rem;
+  background: oklch(18% 0.032 258 / 0.66);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid oklch(78% 0.14 60 / 0.14);
+  border-left: 3px solid oklch(78% 0.15 60 / 0.55);
+  border-radius: var(--radius-m);
+  transition: border-color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+[data-style='sodium'] .post-row:hover {
+  border-color: oklch(78% 0.14 60 / 0.45);
+  border-left-color: var(--accent);
+  box-shadow: 0 14px 44px -18px oklch(78% 0.15 60 / 0.4);
+  transform: translateY(-2px);
+}
+
+/* headlight sweep across the card */
+[data-style='sodium'] .post-row::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 30%,
+    oklch(90% 0.06 80 / 0.07) 46%,
+    oklch(90% 0.06 80 / 0.12) 50%,
+    oklch(90% 0.06 80 / 0.07) 54%,
+    transparent 70%
+  );
+  transform: translateX(-130%);
+  pointer-events: none;
+}
+
+[data-style='sodium'] .post-row:hover::after {
+  transition: transform 0.7s ease;
+  transform: translateX(130%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-style='sodium'] .post-row,
+  [data-style='sodium'] .post-row::after {
+    transition: none;
+  }
+  [data-style='sodium'] .post-row:hover {
+    transform: none;
+  }
+  [data-style='sodium'] .post-row:hover::after {
+    transform: translateX(-130%);
+  }
+}
+
+[data-style='sodium'] .post-row .title {
+  font-family: var(--font-display);
+  font-size: 1.02rem;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+}
+
+[data-style='sodium'] .post-row:hover .title {
+  color: var(--accent);
+}
+
+/* ----- reading pages: dashboard glass panel ----- */
+
+[data-style='sodium'] .post-wrap,
+[data-style='sodium'] .page {
+  position: relative;
+  background: oklch(15% 0.03 260 / 0.78);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border: 1px solid oklch(78% 0.14 60 / 0.16);
+  border-radius: var(--radius-m);
+  box-shadow: 0 30px 80px -40px oklch(0% 0 0 / 0.8), inset 0 1px 0 oklch(90% 0.05 80 / 0.06);
+  padding: 2.6rem 2.2rem 2.2rem;
+  margin-block: 2.2rem 1.6rem;
+}
+
+[data-style='sodium'] .post-header h1,
+[data-style='sodium'] .page h1 {
+  font-size: clamp(1.5rem, 1.2rem + 1.7vw, 2.3rem);
+  line-height: 1.3;
+  letter-spacing: 0.03em;
+}
+
+[data-style='sodium'] .post-header .lede {
+  font-style: normal;
+  color: var(--text-2);
+}
+
+[data-style='sodium'] .post-header .meta {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+}
+
+[data-style='sodium'] .post-header .meta .tag {
+  color: var(--sd-cyan);
+}
+
+[data-style='sodium'] .prose h2,
+[data-style='sodium'] .prose h3 {
+  letter-spacing: 0.03em;
+}
+
+[data-style='sodium'] .prose h2::before {
+  content: '— ';
+  color: var(--accent);
+}
+
+[data-style='sodium'] .prose blockquote {
+  font-style: normal;
+  border-left: 2px solid var(--sd-cyan);
+  background: oklch(80% 0.12 210 / 0.06);
+  padding: 0.7em 1.1em;
+  border-radius: 0 var(--radius-s) var(--radius-s) 0;
+}
+
+[data-style='sodium'] a:hover {
+  color: var(--accent);
+}
+
+[data-style='sodium'] hr {
+  border-top: 1px dashed oklch(78% 0.14 60 / 0.35);
+}
+
+/* code: instrument panel */
+[data-style='sodium'] .prose pre.astro-code {
+  background: oklch(11% 0.026 262 / 0.92) !important;
+  border-color: oklch(78% 0.14 60 / 0.2);
+  border-radius: var(--radius-s);
+  font-size: 0.74rem;
+  box-shadow: inset 0 1px 0 oklch(90% 0.05 80 / 0.05);
+}
+
+[data-style='sodium'] pre.astro-code[data-title]::before {
+  font-family: var(--font-display);
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+}
+
+[data-style='sodium'] .prose code:not(pre code) {
+  background: oklch(78% 0.15 60 / 0.1);
+  border-color: oklch(78% 0.14 60 / 0.22);
+  border-radius: 6px;
+}
+
+[data-style='sodium'] .code-block .copy {
+  background: oklch(14% 0.03 260 / 0.9);
+  border-color: oklch(78% 0.14 60 / 0.3);
+  color: var(--accent);
+  border-radius: 6px;
+}
+
+[data-style='sodium'] .site-footer {
+  background: oklch(13% 0.03 260 / 0.6);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+[data-style='sodium'] .draft-badge {
+  color: var(--sd-cyan);
+  border-color: oklch(80% 0.12 210 / 0.4);
+  background: oklch(80% 0.12 210 / 0.1);
+  border-radius: 5px;
+}
+
+[data-style='sodium'] .terminal-404 {
+  background: oklch(11% 0.026 262 / 0.92);
+  border-radius: var(--radius-s);
+}
+
+[data-style='sodium'] .toc-mobile {
+  background: oklch(18% 0.032 258 / 0.66);
+  border-radius: var(--radius-s);
+}
+
+/* ----- world mode (home with WebGL): the road is the page ----- */
+
+.sodium-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  touch-action: none;
+}
+
+[data-style='sodium'] :is(.site-header, main, .site-footer, .deco) {
+  position: relative;
+  z-index: 1;
+}
+
+[data-style='sodium'][data-world='on'] body {
+  overflow: hidden;
+  height: 100dvh;
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+[data-style='sodium'][data-world='on'] main {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+[data-style='sodium'][data-world='on'] .site-footer {
+  display: none;
+}
+
+/* ----- HUD injected by the world ----- */
+
+.sodium-hud {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  font-family: 'Outfit Variable', system-ui, sans-serif;
+  color: oklch(85% 0.02 80);
+}
+
+.sodium-hud .sd-meta {
+  position: absolute;
+  top: 4.3rem;
+  left: 1.3rem;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.sodium-hud .sd-meta b {
+  font-family: 'Michroma', sans-serif;
+  font-weight: 400;
+  font-size: 0.72rem;
+  letter-spacing: 0.3em;
+  color: oklch(78% 0.15 60);
+  text-shadow: 0 0 14px oklch(78% 0.15 60 / 0.4);
+}
+
+.sodium-hud .sd-meta span {
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  color: oklch(73% 0.02 75);
+}
+
+.sodium-hud .sd-corner {
+  position: absolute;
+  top: 4.3rem;
+  right: 1.3rem;
+  display: flex;
+  gap: 0.4rem;
+  pointer-events: auto;
+}
+
+.sodium-hud .sd-corner button {
+  font-family: 'Michroma', sans-serif;
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  padding: 0.5rem 0.8rem;
+  min-height: 2.2rem;
+  color: oklch(85% 0.02 80);
+  background: oklch(16% 0.03 260 / 0.7);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid oklch(78% 0.14 60 / 0.3);
+  border-radius: 10px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.sodium-hud .sd-corner button:hover {
+  color: oklch(78% 0.15 60);
+}
+
+/* speed gauge: conic ring driven by --v (0–100) */
+.sodium-hud .sd-speed {
+  position: absolute;
+  left: 1.3rem;
+  bottom: calc(1.3rem + env(safe-area-inset-bottom, 0px));
+  width: 7.2rem;
+  height: 7.2rem;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, oklch(14% 0.03 260 / 0.85) 58%, transparent 59%),
+    conic-gradient(
+      from 220deg,
+      oklch(78% 0.15 60) calc(var(--v, 0) * 0.78%),
+      oklch(78% 0.15 60 / 0.12) calc(var(--v, 0) * 0.78%) 78%,
+      transparent 78%
+    );
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.sodium-hud .sd-speed b {
+  font-family: 'Michroma', sans-serif;
+  font-weight: 400;
+  font-size: 1.7rem;
+  color: oklch(94% 0.012 80);
+}
+
+.sodium-hud .sd-speed span {
+  font-size: 0.62rem;
+  letter-spacing: 0.24em;
+  color: oklch(56% 0.025 70);
+}
+
+.sodium-hud .sd-help {
+  position: absolute;
+  bottom: 1.1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+  color: oklch(56% 0.025 70);
+}
+
+.sodium-hud .sd-toasts {
+  position: absolute;
+  top: 8.4rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  gap: 0.35rem;
+  justify-items: center;
+}
+
+.sd-toast {
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  padding: 0.45rem 1rem;
+  color: oklch(94% 0.012 80);
+  background: oklch(16% 0.03 260 / 0.82);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid oklch(78% 0.14 60 / 0.3);
+  border-radius: 999px;
+  animation: sd-toast-in 0.25s ease-out;
+}
+
+.sd-toast.ok {
+  color: oklch(78% 0.15 60);
+}
+
+@keyframes sd-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sd-toast {
+    animation: none;
+  }
+}
+
+/* exit card: appears when you pull up to a billboard */
+.sodium-hud .sd-dock {
+  pointer-events: auto;
+  cursor: pointer;
+  position: absolute;
+  bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(34rem, calc(100vw - 11rem));
+  padding: 0.95rem 1.3rem;
+  background: oklch(16% 0.03 260 / 0.8);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border: 1px solid oklch(78% 0.14 60 / 0.35);
+  border-radius: var(--radius-m, 16px);
+  box-shadow: 0 18px 50px -20px oklch(78% 0.15 60 / 0.35);
+}
+
+.sodium-hud .sd-dock b {
+  display: block;
+  font-family: 'Michroma', sans-serif;
+  font-weight: 400;
+  font-size: 0.88rem;
+  letter-spacing: 0.04em;
+  color: oklch(94% 0.012 80);
+  margin-bottom: 0.15rem;
+}
+
+.sodium-hud .sd-dock span {
+  font-size: 0.78rem;
+  color: oklch(73% 0.02 75);
+}
+
+.sodium-hud .sd-dock i {
+  display: block;
+  font-style: normal;
+  margin-top: 0.35rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  color: oklch(78% 0.15 60);
+}
+
+/* arrival overlay */
+.sodium-hud .sd-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  gap: 0.4rem;
+  justify-items: center;
+  text-align: center;
+  padding: 1.3rem 2rem;
+  background: oklch(14% 0.03 260 / 0.7);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border: 1px solid oklch(78% 0.14 60 / 0.3);
+  border-radius: var(--radius-m, 16px);
+  transition: opacity 0.3s ease;
+}
+
+.sodium-hud .sd-overlay.hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.sodium-hud .sd-overlay b {
+  font-family: 'Michroma', sans-serif;
+  font-weight: 400;
+  font-size: 1rem;
+  letter-spacing: 0.22em;
+  color: oklch(78% 0.15 60);
+  text-shadow: 0 0 18px oklch(78% 0.15 60 / 0.5);
+}
+
+.sodium-hud .sd-overlay span {
+  font-size: 0.8rem;
+  color: oklch(73% 0.02 75);
+}
+
+/* touch: steering stick + pedal cluster */
+.sodium-hud .sd-stick {
+  position: fixed;
+  width: 128px;
+  height: 128px;
+  transform: translate(-50%, -50%);
+  border: 1px solid oklch(78% 0.14 60 / 0.4);
+  border-radius: 50%;
+  background: oklch(78% 0.15 60 / 0.05);
+}
+
+.sodium-hud .sd-stick[hidden] {
+  display: none;
+}
+
+.sodium-hud .sd-stick i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
+  border: 1px solid oklch(78% 0.15 60 / 0.8);
+  border-radius: 50%;
+  background: oklch(78% 0.15 60 / 0.15);
+}
+
+.sodium-hud .sd-cluster {
+  position: absolute;
+  right: calc(0.9rem + env(safe-area-inset-right, 0px));
+  bottom: calc(0.9rem + env(safe-area-inset-bottom, 0px));
+  display: grid;
+  grid-template-columns: repeat(2, minmax(5rem, 1fr));
+  gap: 0.5rem;
+  pointer-events: auto;
+}
+
+.sodium-hud .sd-cluster button {
+  position: relative;
+  font-family: 'Michroma', sans-serif;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  padding: 0.9rem;
+  min-height: 3.1rem;
+  color: oklch(94% 0.012 80);
+  background: oklch(16% 0.03 260 / 0.72);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid oklch(78% 0.14 60 / 0.35);
+  border-radius: 14px;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.sodium-hud .sd-cluster button[data-sd-drift] {
+  grid-column: 1 / -1;
+  color: oklch(80% 0.12 210);
+  border-color: oklch(80% 0.12 210 / 0.4);
+}
+
+.sodium-hud .sd-cluster button:active {
+  background: oklch(78% 0.15 60 / 0.2);
+}
+
+.sodium-hud .sd-cluster button.on {
+  background: oklch(78% 0.15 60 / 0.16);
+  border-color: oklch(78% 0.15 60 / 0.7);
+  box-shadow: 0 0 18px -4px oklch(78% 0.15 60 / 0.5);
+}
+
+@media (pointer: coarse) {
+  .sodium-hud .sd-help {
+    display: none;
+  }
+  .sodium-hud .sd-dock {
+    left: calc(1rem + env(safe-area-inset-left, 0px));
+    transform: none;
+    max-width: calc(100vw - 14rem);
+  }
+}
+
+@media (max-width: 640px) {
+  .sodium-hud .sd-meta span {
+    display: none;
+  }
+  .sodium-hud .sd-speed {
+    width: 5.4rem;
+    height: 5.4rem;
+  }
+  .sodium-hud .sd-speed b {
+    font-size: 1.2rem;
+  }
+}
+
+/* return chip on article pages */
+.sd-return {
+  position: fixed;
+  top: 4.4rem;
+  left: 1.2rem;
+  z-index: 5;
+  font-family: 'Michroma', sans-serif;
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  padding: 0.5rem 0.9rem;
+  color: oklch(78% 0.15 60);
+  text-decoration: none;
+  background: oklch(16% 0.03 260 / 0.85);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid oklch(78% 0.14 60 / 0.35);
+  border-radius: 999px;
+}
+
+.sd-return:hover {
+  color: oklch(94% 0.012 80);
+  box-shadow: 0 0 20px -6px oklch(78% 0.15 60 / 0.5);
+}

@@ -33,6 +33,10 @@ import '@fontsource/fragment-mono/400.css';
 import '@fontsource/fragment-mono/400-italic.css';
 // vector
 import '@fontsource/vt323';
+// sodium
+import '@fontsource/michroma';
+import '@fontsource-variable/outfit';
+import '@fontsource-variable/martian-mono';
 
 import '../styles/global.css';
 import '../styles/gazette.css';
@@ -40,6 +44,7 @@ import '../styles/aurora.css';
 import '../styles/zine.css';
 import '../styles/system.css';
 import '../styles/vector.css';
+import '../styles/sodium.css';
 
 interface Props {
   title: string;
@@ -62,6 +67,7 @@ const STYLES = [
   { id: 'zine', tag: 'xerox riot', dots: ['oklch(95% 0.012 95)', 'oklch(13% 0 0)', 'oklch(91% 0.21 115)'] },
   { id: 'system', tag: 'retro desk', dots: ['oklch(87% 0.012 95)', 'oklch(20% 0.006 90)', 'oklch(99.5% 0.002 95)'] },
   { id: 'vector', tag: 'context overworld', dots: ['oklch(11% 0.015 165)', 'oklch(87% 0.21 155)', 'oklch(72% 0.24 340)'] },
+  { id: 'sodium', tag: 'night drive', dots: ['oklch(14% 0.03 260)', 'oklch(78% 0.15 60)', 'oklch(80% 0.12 210)'] },
 ];
 ---
 
@@ -72,7 +78,7 @@ const STYLES = [
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <script is:inline>
       (() => {
-        const known = ['phosphor', 'gazette', 'aurora', 'zine', 'system', 'vector'];
+        const known = ['phosphor', 'gazette', 'aurora', 'zine', 'system', 'vector', 'sodium'];
         let s = null;
         try {
           s = localStorage.getItem('style');
@@ -230,24 +236,37 @@ const STYLES = [
       }
     </script>
     <script>
-      // vector style bootstrap — the 3D world (and three.js with it) loads only
-      // when the vector style is active. Mount/unmount tracks the switcher live.
+      // world bootstrap — 3D worlds (and three.js with them) load only when
+      // their style is active. Mount/unmount tracks the switcher live.
+      const WORLDS: Record<string, () => Promise<{ mount: () => { unmount: () => void } }>> = {
+        vector: () => import('../scripts/vector-world.js'),
+        sodium: () => import('../scripts/sodium-world.js'),
+      };
       let world: { unmount: () => void } | null = null;
+      let owner: string | null = null;
       let loading = false;
       const syncWorld = async () => {
-        const on = document.documentElement.dataset.style === 'vector';
-        if (on && !world && !loading) {
-          loading = true;
-          try {
-            const mod = await import('../scripts/vector-world.js');
-            if (document.documentElement.dataset.style === 'vector') world = mod.mount();
-          } catch {
-            /* no WebGL / load failure: the vector CSS alone is a complete fallback */
-          }
-          loading = false;
-        } else if (!on && world) {
+        if (loading) return;
+        const style = document.documentElement.dataset.style ?? '';
+        const want = WORLDS[style] ? style : null;
+        if (world && owner !== want) {
           world.unmount();
           world = null;
+          owner = null;
+        }
+        if (want && !world) {
+          loading = true;
+          try {
+            const mod = await WORLDS[want]();
+            if (document.documentElement.dataset.style === want) {
+              world = mod.mount();
+              owner = want;
+            }
+          } catch {
+            /* no WebGL / load failure: the CSS alone is a complete fallback */
+          }
+          loading = false;
+          syncWorld(); // the style may have changed while the chunk loaded
         }
       };
       syncWorld();

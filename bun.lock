@@ -13,11 +13,14 @@
         "@fontsource-variable/hanken-grotesk": "^5.2.8",
         "@fontsource-variable/jetbrains-mono": "^5.2.5",
         "@fontsource-variable/libre-franklin": "^5.2.8",
+        "@fontsource-variable/martian-mono": "^5.2.7",
         "@fontsource-variable/newsreader": "^5.2.5",
+        "@fontsource-variable/outfit": "^5.2.8",
         "@fontsource-variable/syne": "^5.2.7",
         "@fontsource-variable/victor-mono": "^5.2.8",
         "@fontsource/fragment-mono": "^5.2.8",
         "@fontsource/ibm-plex-mono": "^5.2.7",
+        "@fontsource/michroma": "^5.2.8",
         "@fontsource/silkscreen": "^5.2.8",
         "@fontsource/space-mono": "^5.2.9",
         "@fontsource/vt323": "^5.2.7",
@@ -119,7 +122,11 @@
 
     "@fontsource-variable/libre-franklin": ["@fontsource-variable/libre-franklin@5.2.8", "", {}, "sha512-Ffl+p4aO3jcZmxzDmRafi5e6bI3qzMN3UxG2QOSvpeKgXMr93jtHOmlLHMsBOYccnpDmL55PBq65ayQJmfC0Rw=="],
 
+    "@fontsource-variable/martian-mono": ["@fontsource-variable/martian-mono@5.2.7", "", {}, "sha512-tchlJXmyjMLQLbhYh5kCwZIVXsTxfvfTAZ32nIrszWCJnEIqTpRloMvJPOpQA9BBCaOvvV5k0nI633dlqJsPRw=="],
+
     "@fontsource-variable/newsreader": ["@fontsource-variable/newsreader@5.2.10", "", {}, "sha512-MdI2iRwrqWpMOU/2aV2BgfZ4dJNlj/XlYaY8Zb7t87mWqHskYW0XiUANkt1cyOCiEfW2VQ0bQ5vZgGPp6B2B4w=="],
+
+    "@fontsource-variable/outfit": ["@fontsource-variable/outfit@5.2.8", "", {}, "sha512-4oUDCZx/Tcz6HZP423w/niqEH31Gks5IsqHV2ZZz1qKHaVIZdj2f0/S1IK2n8jl6Xo0o3N+3RjNHlV9R73ozQA=="],
 
     "@fontsource-variable/syne": ["@fontsource-variable/syne@5.2.7", "", {}, "sha512-B2z7P0mGdNSAgz6SmtK7HXReZL22WJ8Z8sk5Z1ZuKiCSRM7DwWLjWXLwhbQ+CvmtNS/+p95jGvVEfQT9bm+UKw=="],
 
@@ -128,6 +135,8 @@
     "@fontsource/fragment-mono": ["@fontsource/fragment-mono@5.2.8", "", {}, "sha512-m+aRQ+c9GghoUtEdSFIPM/ylCxDhY5ESeVzuvF+eSCqkR85VSCWM7jnNWZ+OrC9K2+xp6f0uallDDAjmPLQNrQ=="],
 
     "@fontsource/ibm-plex-mono": ["@fontsource/ibm-plex-mono@5.2.7", "", {}, "sha512-MKAb8qV+CaiMQn2B0dIi1OV3565NYzp3WN5b4oT6LTkk+F0jR6j0ZN+5BKJiIhffDC3rtBULsYZE65+0018z9w=="],
+
+    "@fontsource/michroma": ["@fontsource/michroma@5.2.8", "", {}, "sha512-52Ml9TU/yC5YluqHxXqLK/AVUWbIeI3lCTZcTRnIkvfKHPZ0GSvSFi49ti872oCdo+YAMUk8RIfxVxXa6Cjigw=="],
 
     "@fontsource/silkscreen": ["@fontsource/silkscreen@5.2.8", "", {}, "sha512-PfVe2BRZdjY/UIEXsrpzCo/W8FIGo6jEEMHuQiKfma+E5LXb6WfFFBfCEsO89ZWOSwl2mLE1Yq0d8gagmcaBpQ=="],
 
