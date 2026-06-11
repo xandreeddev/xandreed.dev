@@ -34,8 +34,9 @@ visit follows `prefers-color-scheme` (dark → phosphor, light → gazette).
 In **vector**, the blog is efferent's context tree as a star system you fly: the
 core is the sun, every post is a wireframe planet (one moon per tag, amber if
 draft) on procedurally generated orbit shells — the layout is seeded from post
-slugs and scales to any number of articles, newest innermost. Click the void to
-take the stick (pointer lock) — mouse aims, `W` thrusts, `shift` boosts,
+slugs and scales to any number of articles, newest innermost. A dashed
+chronology route threads the planets oldest → newest, its flow dots marking the
+direction of time. Click the void to take the stick (pointer lock) — mouse aims, `W` thrusts, `shift` boosts,
 `space`/click fires lasers with target lead, `E`/right-click sends a homing
 missile at the auto-locked target, `S` brakes, `A`/`D` roll, `esc` releases. On
 touch screens (iPad / iPhone / Android) the left half of the screen is a virtual

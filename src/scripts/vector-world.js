@@ -837,6 +837,8 @@ export function mount() {
   const missiles = [];
   const booms = [];
   let worldGroup = null;
+  let routeCurve = null;
+  let routeDots = null;
   let ship = null;
   const vel = new THREE.Vector3();
   let hp = stats.maxHp;
@@ -1513,6 +1515,54 @@ export function mount() {
     makeEboltPool(16);
     makeBoomPool(8);
 
+    /* chronological route: a dashed path threading the planets oldest →
+       newest; flow dots drift along it showing the direction of time */
+    if (planets.length > 1) {
+      const stops = [...planets]
+        .reverse() // posts arrive newest-first; the route reads oldest-first
+        .map((pl) => pl.group.position.clone().add(new THREE.Vector3(0, pl.radius + 5, 0)));
+      routeCurve = new THREE.CatmullRomCurve3(stops);
+      const routeLine = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(routeCurve.getPoints(220)),
+        new THREE.LineDashedMaterial({
+          color: CYAN,
+          transparent: true,
+          opacity: 0.3,
+          dashSize: 2.4,
+          gapSize: 3.6,
+          depthWrite: false,
+        }),
+      );
+      routeLine.computeLineDistances();
+      worldGroup.add(routeLine);
+
+      const N = 80;
+      const arr = new Float32Array(N * 3);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+      routeDots = new THREE.Points(
+        geo,
+        new THREE.PointsMaterial({
+          color: CYAN,
+          size: 1.6,
+          transparent: true,
+          opacity: 0.75,
+          sizeAttenuation: true,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        }),
+      );
+      routeDots.frustumCulled = false;
+      /* static fill so the route reads even with reduced motion */
+      for (let i = 0; i < N; i++) {
+        routeCurve.getPointAt(i / (N - 1), tmpV3);
+        arr[i * 3] = tmpV3.x;
+        arr[i * 3 + 1] = tmpV3.y;
+        arr[i * 3 + 2] = tmpV3.z;
+      }
+      worldGroup.add(routeDots);
+    }
+
     /* portals out at the edge — each opens a seeded transit run */
     for (let i = 0; i < 3; i++) {
       const p = makePortal(i);
@@ -2156,6 +2206,20 @@ export function mount() {
           } · repairs while docked</span>`;
         }
       } else if (dockEl) dockEl.hidden = true;
+    }
+
+    /* --- chronology route: dots flow oldest → newest --- */
+    if (routeDots && !reduced) {
+      const arr = routeDots.geometry.attributes.position.array;
+      const N = arr.length / 3;
+      for (let i = 0; i < N; i++) {
+        const tt = (i / N + time * 0.01) % 1;
+        routeCurve.getPointAt(tt, tmpV3);
+        arr[i * 3] = tmpV3.x;
+        arr[i * 3 + 1] = tmpV3.y;
+        arr[i * 3 + 2] = tmpV3.z;
+      }
+      routeDots.geometry.attributes.position.needsUpdate = true;
     }
 
     /* --- portals: spin, labels, entry --- */
