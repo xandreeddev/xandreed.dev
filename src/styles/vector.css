@@ -364,6 +364,7 @@
 
 .vector-hud .vh-overlay.hidden {
   opacity: 0;
+  visibility: hidden;
 }
 
 .vector-hud .vh-overlay b {

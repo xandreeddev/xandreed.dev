@@ -811,7 +811,7 @@ export function mount() {
     }
 
     camera.position
-      .copy(new THREE.Vector3(0, 3.2, 11).applyQuaternion(ship.quaternion))
+      .copy(new THREE.Vector3(0, 3.8, 15.5).applyQuaternion(ship.quaternion))
       .add(ship.position);
     camera.lookAt(ship.position);
 
@@ -881,13 +881,30 @@ export function mount() {
       pointer.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
     };
 
+    /* the take-the-stick overlay is a hint, not a gate: any input dismisses
+       it for good, and it fades on its own after a few seconds */
+    const overlay = hud?.querySelector('[data-vh-overlay]');
+    let overlayGone = false;
+    const dismissOverlay = () => {
+      if (overlayGone) return;
+      overlayGone = true;
+      overlay?.classList.add('hidden');
+    };
+    setTimeout(dismissOverlay, 7000);
+
+    let everLocked = false;
     document.addEventListener(
       'pointerlockchange',
       () => {
         pointerLocked = document.pointerLockElement === el;
         hud?.classList.toggle('locked', pointerLocked);
-        hud?.querySelector('[data-vh-overlay]')?.classList.toggle('hidden', pointerLocked);
-        if (!pointerLocked) keys.fire = false;
+        if (pointerLocked) {
+          everLocked = true;
+          dismissOverlay();
+        } else {
+          keys.fire = false;
+          if (everLocked) hud?.toast('stick released — click the void to re-engage');
+        }
       },
       { signal },
     );
@@ -909,6 +926,7 @@ export function mount() {
       'pointerdown',
       (e) => {
         setPointer(e);
+        dismissOverlay();
         downAt = performance.now();
         downX = e.clientX;
         downY = e.clientY;
@@ -951,6 +969,7 @@ export function mount() {
       'wheel',
       (e) => {
         e.preventDefault();
+        dismissOverlay();
         if (!ship) return;
         const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(ship.quaternion);
         vel.addScaledVector(fwd, -e.deltaY * 0.045);
@@ -962,6 +981,7 @@ export function mount() {
       'keydown',
       (e) => {
         if (e.metaKey || e.ctrlKey || e.altKey) return;
+        dismissOverlay();
         const k = e.key;
         if (['w', 'W', 'ArrowUp'].includes(k)) { keys.thrust = true; e.preventDefault(); }
         else if (['s', 'S', 'ArrowDown'].includes(k)) { keys.brake = true; e.preventDefault(); }
@@ -1252,7 +1272,7 @@ export function mount() {
 
       /* --- chase camera + shake --- */
       shake = Math.max(0, shake - dt * 1.8);
-      const camTarget = tmpV2.set(0, 2.6, 9.5).applyQuaternion(ship.quaternion).add(ship.position);
+      const camTarget = tmpV2.set(0, 3.8, 15.5).applyQuaternion(ship.quaternion).add(ship.position);
       camera.position.lerp(camTarget, reduced ? 1 : 1 - Math.exp(-dt * 4.5));
       if (shake > 0 && !reduced)
         camera.position.add(
@@ -1262,7 +1282,7 @@ export function mount() {
             (Math.random() - 0.5) * shake,
           ),
         );
-      const look = new THREE.Vector3(0, 0.8, -8).applyQuaternion(ship.quaternion).add(ship.position);
+      const look = new THREE.Vector3(0, 1, -14).applyQuaternion(ship.quaternion).add(ship.position);
       camera.lookAt(look);
 
       /* --- HUD --- */
