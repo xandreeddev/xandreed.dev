@@ -42,7 +42,7 @@ const SCRAP_KEY = 'vector-scrap';
 const MODS = [
   { id: 'twin', name: 'twin cannons', desc: 'a second laser muzzle' },
   { id: 'burner', name: 'afterburner', desc: 'hotter boost, faster fuel regen' },
-  { id: 'pods', name: 'missile pods', desc: '+2 missiles, faster reload' },
+  { id: 'pods', name: 'missile pods', desc: 'twin salvo, faster reload' },
   { id: 'shield', name: 'deflector ring', desc: '+40 hull, half impact damage' },
   { id: 'wings', name: 'swept wings', desc: '+30% turn rate' },
   { id: 'gold', name: 'gilded hull', desc: '+12 top speed' },
@@ -98,29 +98,47 @@ function readPosts() {
 
 /* ----- textures & materials ----- */
 
-function textSprite(lines, { size = 72, color = '#46ffa0', dim = '#9fffd0' } = {}) {
+/* nameplate sprite: dark backing plate so the bloom pass can't smear the
+   glyphs; the frame loop scales these with distance so they read from
+   anywhere in the system */
+function textSprite(lines, { color = '#46ffa0' } = {}) {
   const c = document.createElement('canvas');
-  c.width = 1024;
-  c.height = 256;
+  c.width = 2048;
+  c.height = 512;
   const ctx = c.getContext('2d');
   ctx.textAlign = 'center';
-  ctx.fillStyle = color;
-  ctx.font = `${size}px VT323, monospace`;
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 18;
-  ctx.fillText(lines[0], 512, 118, 980);
+
+  ctx.font = '150px VT323, monospace';
+  const w1 = ctx.measureText(lines[0]).width;
+  ctx.font = '84px VT323, monospace';
+  const w2 = lines[1] ? ctx.measureText(lines[1]).width : 0;
+  const plateW = Math.min(1980, Math.max(w1, w2) + 120);
+  const plateH = lines[1] ? 330 : 220;
+  const px = (2048 - plateW) / 2;
+  const py = (512 - plateH) / 2;
+
+  ctx.fillStyle = 'rgba(2, 12, 8, 0.86)';
+  ctx.fillRect(px, py, plateW, plateH);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 5;
+  ctx.strokeRect(px, py, plateW, plateH);
+
+  ctx.fillStyle = '#eafff2';
+  ctx.font = '150px VT323, monospace';
+  ctx.fillText(lines[0], 1024, py + 150, plateW - 90);
   if (lines[1]) {
-    ctx.shadowBlur = 8;
-    ctx.fillStyle = dim;
-    ctx.font = `${Math.round(size * 0.55)}px VT323, monospace`;
-    ctx.fillText(lines[1], 512, 190, 980);
+    ctx.fillStyle = color;
+    ctx.font = '84px VT323, monospace';
+    ctx.fillText(lines[1], 1024, py + 262, plateW - 90);
   }
+
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
   const s = new THREE.Sprite(
     new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }),
   );
-  s.scale.set(26, 6.5, 1);
+  s.scale.set(28, 7, 1);
   return s;
 }
 
@@ -211,29 +229,67 @@ function makeCore(scale = 1) {
   return core;
 }
 
-/* ----- the ship: hull built from installed mods ----- */
+/* ----- the ship: hull built from installed mods (loud, visible parts) ----- */
 
 function makeShip(mods) {
   const ship = new THREE.Group();
   const hull = new THREE.Group();
+  const gold = mods.has('gold');
+  const swept = mods.has('wings');
 
   const fuselage = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.ConeGeometry(0.55, 2.4, 4)),
-    wireMat(mods.has('gold') ? AMBER : GREEN, 0.95),
+    wireMat(gold ? AMBER : GREEN, 0.95),
   );
   fuselage.rotation.x = -Math.PI / 2; // nose toward -z
+  hull.add(fuselage);
 
-  const wingScale = mods.has('wings') ? 1.35 : 1;
+  if (gold) {
+    /* gilded trim: a second, larger outline shell */
+    const trim = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.ConeGeometry(0.72, 2.85, 4)),
+      wireMat(AMBER, 0.4),
+    );
+    trim.rotation.x = -Math.PI / 2;
+    hull.add(trim);
+  }
+
+  /* wings: stock delta vs swept blades with winglets */
+  const tipX = swept ? 3.1 : 1.9;
   const wing = (sx) =>
     new THREE.LineLoop(
-      new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(sx * 1.9 * wingScale, -0.08, 1.0),
-        new THREE.Vector3(sx * 0.25, 0, -0.7),
-        new THREE.Vector3(sx * 0.25, 0, 1.05),
-      ]),
+      new THREE.BufferGeometry().setFromPoints(
+        swept
+          ? [
+              new THREE.Vector3(sx * 3.1, -0.12, 1.9),
+              new THREE.Vector3(sx * 0.3, 0, -1.05),
+              new THREE.Vector3(sx * 0.3, 0, 1.2),
+            ]
+          : [
+              new THREE.Vector3(sx * 1.9, -0.08, 1.0),
+              new THREE.Vector3(sx * 0.25, 0, -0.7),
+              new THREE.Vector3(sx * 0.25, 0, 1.05),
+            ],
+      ),
       wireMat(MAGENTA, 0.95),
     );
+  hull.add(wing(1), wing(-1));
 
+  if (swept) {
+    for (const sx of [1, -1]) {
+      const fin = new THREE.LineLoop(
+        new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(sx * 3.1, -0.12, 1.9),
+          new THREE.Vector3(sx * 3.1, 0.75, 2.15),
+          new THREE.Vector3(sx * 3.1, -0.12, 2.35),
+        ]),
+        wireMat(MAGENTA, 0.85),
+      );
+      hull.add(fin);
+    }
+  }
+
+  /* exhaust: stock single magenta glow; afterburner = twin amber nozzles */
   const exhaust = new THREE.Sprite(
     new THREE.SpriteMaterial({
       map: glowTexture(mods.has('burner') ? '#ffc46a' : '#ff5fd2'),
@@ -243,50 +299,93 @@ function makeShip(mods) {
       depthWrite: false,
     }),
   );
-  exhaust.position.set(0, 0, 1.6);
-  exhaust.scale.setScalar(mods.has('burner') ? 3.1 : 2.2);
+  exhaust.position.set(0, 0, 1.7);
+  exhaust.scale.setScalar(mods.has('burner') ? 4 : 2.2);
+  hull.add(exhaust);
 
-  hull.add(fuselage, wing(1), wing(-1), exhaust);
+  if (mods.has('burner')) {
+    for (const sx of [1, -1]) {
+      const nozzle = new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.ConeGeometry(0.26, 0.7, 6)),
+        wireMat(AMBER, 0.9),
+      );
+      nozzle.rotation.x = Math.PI / 2; // opening backwards
+      nozzle.position.set(sx * 0.42, 0, 1.35);
+      hull.add(nozzle);
+    }
+  }
 
-  /* visible components */
+  /* twin cannons: real barrels with glowing muzzle tips */
   const muzzles = [];
   if (mods.has('twin')) {
     for (const sx of [1, -1]) {
-      const m = new THREE.LineSegments(
-        new THREE.EdgesGeometry(new THREE.BoxGeometry(0.12, 0.12, 0.9)),
-        wireMat(CYAN, 0.9),
+      const bx = sx * tipX * 0.78;
+      const barrel = new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.BoxGeometry(0.2, 0.2, 1.7)),
+        wireMat(CYAN, 1),
       );
-      m.position.set(sx * 1.55 * wingScale, 0, 0.35);
-      hull.add(m);
-      muzzles.push(new THREE.Vector3(sx * 1.55 * wingScale, 0, -0.2));
+      barrel.position.set(bx, 0.05, 0.1);
+      const tip = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: glowTexture('#6ad8ff'),
+          transparent: true,
+          opacity: 0.9,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        }),
+      );
+      tip.scale.setScalar(0.85);
+      tip.position.set(bx, 0.05, -0.85);
+      hull.add(barrel, tip);
+      muzzles.push(new THREE.Vector3(bx, 0.05, -0.95));
     }
   } else {
     muzzles.push(new THREE.Vector3(0, -0.1, -1.4));
   }
 
+  /* missile pods: under-wing racks with visible warhead glows */
   if (mods.has('pods')) {
     for (const sx of [1, -1]) {
-      const pod = new THREE.LineSegments(
-        new THREE.EdgesGeometry(new THREE.BoxGeometry(0.26, 0.2, 1.1)),
-        wireMat(AMBER, 0.8),
+      const rack = new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.BoxGeometry(0.5, 0.34, 1.45)),
+        wireMat(AMBER, 0.95),
       );
-      pod.position.set(sx * 0.85 * wingScale, -0.22, 0.55);
-      hull.add(pod);
+      rack.position.set(sx * 1.05, -0.34, 0.5);
+      hull.add(rack);
+      for (let k = 0; k < 3; k++) {
+        const warhead = new THREE.Sprite(
+          new THREE.SpriteMaterial({
+            map: glowTexture('#ffc46a'),
+            transparent: true,
+            opacity: 0.85,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+          }),
+        );
+        warhead.scale.setScalar(0.4);
+        warhead.position.set(sx * 1.05 - 0.13 + k * 0.13, -0.34, -0.28);
+        hull.add(warhead);
+      }
     }
   }
 
-  let shieldRing = null;
+  /* deflector: two crossed rings, animated */
+  const shieldRings = [];
   if (mods.has('shield')) {
-    shieldRing = new THREE.LineSegments(
-      new THREE.WireframeGeometry(new THREE.TorusGeometry(2.5, 0.02, 3, 48)),
-      wireMat(CYAN, 0.35),
-    );
-    shieldRing.rotation.x = Math.PI / 2;
-    hull.add(shieldRing);
+    for (const rx of [Math.PI / 2, 0.35]) {
+      const ring = new THREE.LineSegments(
+        new THREE.WireframeGeometry(new THREE.TorusGeometry(2.6, 0.025, 3, 56)),
+        wireMat(CYAN, 0.4),
+      );
+      ring.rotation.x = rx;
+      hull.add(ring);
+      shieldRings.push(ring);
+    }
   }
 
   ship.add(hull);
-  ship.userData = { exhaust, hull, muzzles, shieldRing };
+  ship.scale.setScalar(1.35); // presence — the parts must read from the chase cam
+  ship.userData = { exhaust, hull, muzzles, shieldRings };
   return ship;
 }
 
@@ -316,7 +415,7 @@ function makeHud(n, modCount) {
     <div class="vh-bars" aria-hidden="true">
       <div class="vh-bar-row"><span>hull</span><div class="vh-bar"><i data-vh-hp style="width:100%"></i></div></div>
       <div class="vh-bar-row"><span>boost</span><div class="vh-bar boost"><i data-vh-boost style="width:100%"></i></div></div>
-      <div class="vh-stats" data-vh-stats>v 0 · ◆ 0 · ➤ 0 · mods ${modCount}/${MODS.length}</div>
+      <div class="vh-stats" data-vh-stats>v 0 · ◆ 0 · ➤ ∞ · mods ${modCount}/${MODS.length}</div>
     </div>
     <div class="vh-top" data-vh-top aria-hidden="true">system xandreed · ${n} planets</div>
     <div class="vh-lock" data-vh-lock aria-hidden="true"></div>
@@ -385,8 +484,7 @@ export function mount() {
     boostAcc: mods.has('burner') ? 86 : 64,
     fuelRegen: mods.has('burner') ? 30 : 18,
     impactScale: mods.has('shield') ? 0.5 : 1,
-    maxMissiles: mods.has('pods') ? 6 : 3,
-    missileReload: mods.has('pods') ? 3 : 6,
+    missileCooldown: mods.has('pods') ? 1.1 : 2.4,
   };
 
   /* live state */
@@ -401,8 +499,7 @@ export function mount() {
   let hp = stats.maxHp;
   let fuel = 100;
   let scrap = store.scrap(0);
-  let missileStock = stats.maxMissiles;
-  let missileTimer = 0;
+  let missileCd = 0;
   let fireTimer = 0;
   let invuln = 0;
   let shake = 0;
@@ -574,7 +671,7 @@ export function mount() {
     for (const m of muzzles) {
       const b = bolts.find((x) => x.life <= 0);
       if (!b) return;
-      b.pos.copy(m).applyQuaternion(ship.quaternion).add(ship.position);
+      b.pos.copy(ship.localToWorld(m.clone()));
       if (aimPoint) b.dir.copy(aimPoint).sub(b.pos).normalize();
       else b.dir.set(0, 0, -1).applyQuaternion(ship.quaternion);
       b.life = 1.1;
@@ -583,31 +680,34 @@ export function mount() {
   }
 
   function fireMissile() {
-    if (!ship || missileStock <= 0 || lockIdx < 0 || !asteroids[lockIdx]) {
-      if (hud && missileStock <= 0) hud.toast('no missiles — scrap rebuilds them', 'warn');
-      else if (hud && lockIdx < 0) hud.toast('no lock — face an asteroid', 'warn');
+    if (!ship || missileCd > 0) return;
+    if (lockIdx < 0 || !asteroids[lockIdx]) {
+      hud?.toast('no lock — face an asteroid', 'warn');
       return;
     }
-    missileStock--;
-    const g = new THREE.Group();
-    const body = new THREE.Sprite(
-      new THREE.SpriteMaterial({
-        map: glowTexture('#ffc46a'),
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      }),
-    );
-    body.scale.setScalar(1.6);
-    g.add(body);
-    g.position.copy(ship.position).add(new THREE.Vector3(0, -0.6, 0).applyQuaternion(ship.quaternion));
-    g.userData = {
-      vel: new THREE.Vector3(0, 0, -1).applyQuaternion(ship.quaternion).multiplyScalar(46).add(vel),
-      target: asteroids[lockIdx],
-      life: 6,
-    };
-    scene.add(g);
-    missiles.push(g);
+    missileCd = stats.missileCooldown;
+    const tubes = mods.has('pods') ? [1.05, -1.05] : [0];
+    for (const sx of tubes) {
+      const g = new THREE.Group();
+      const body = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: glowTexture('#ffc46a'),
+          transparent: true,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        }),
+      );
+      body.scale.setScalar(1.6);
+      g.add(body);
+      g.position.copy(ship.localToWorld(new THREE.Vector3(sx, -0.5, 0.4)));
+      g.userData = {
+        vel: new THREE.Vector3(sx * 6, -2, -46).applyQuaternion(ship.quaternion).add(vel),
+        target: asteroids[lockIdx],
+        life: 6,
+      };
+      scene.add(g);
+      missiles.push(g);
+    }
   }
 
   function killAsteroid(rock, idx) {
@@ -617,7 +717,6 @@ export function mount() {
     if (lockIdx === idx) lockIdx = -1;
     else if (lockIdx > idx) lockIdx--;
     scrap = store.scrap(1);
-    if (missileStock < stats.maxMissiles && scrap > 0 && scrap % 3 === 0) missileStock++;
     hud?.toast('+1 scrap', 'ok');
   }
 
@@ -681,8 +780,22 @@ export function mount() {
     scene.add(lockReticle);
 
     ship = makeShip(mods);
-    const p0 = planets[0]?.group.position ?? new THREE.Vector3(0, 0, 90);
-    ship.position.copy(p0).multiplyScalar(1.6).add(new THREE.Vector3(0, 22, 0));
+    /* spawn in orbit of the planet you just read; otherwise at the gate */
+    let atSlug = null;
+    try {
+      atSlug = sessionStorage.getItem('vector-at');
+    } catch {}
+    const homePl = planets.find((p) => p.post.slug && p.post.slug === atSlug);
+    if (homePl) {
+      const out = homePl.group.position.clone().normalize();
+      ship.position
+        .copy(homePl.group.position)
+        .addScaledVector(out, homePl.radius * 2.4 + 8)
+        .add(new THREE.Vector3(0, 4, 0));
+    } else {
+      const p0 = planets[0]?.group.position ?? new THREE.Vector3(0, 0, 90);
+      ship.position.copy(p0).multiplyScalar(1.6).add(new THREE.Vector3(0, 22, 0));
+    }
     ship.lookAt(core.position);
     ship.rotateY(Math.PI);
     scene.add(ship);
@@ -704,6 +817,15 @@ export function mount() {
 
     hud = makeHud(posts.length, mods.size);
     document.documentElement.dataset.world = 'on';
+
+    /* announce components installed since the last time we were here */
+    try {
+      const seen = new Set(JSON.parse(localStorage.getItem('vector-mods-seen') ?? '[]'));
+      for (const id of mods)
+        if (!seen.has(id))
+          hud.toast(`component installed: ${MODS.find((m) => m.id === id)?.name}`, 'ok');
+      localStorage.setItem('vector-mods-seen', JSON.stringify([...mods]));
+    } catch {}
   }
 
   function buildAmbient() {
@@ -718,6 +840,9 @@ export function mount() {
     /* article pages: record the visit (this is how mods unlock) + escape hatch */
     const slug = location.pathname.match(/^\/posts\/([^/]+)\/?$/)?.[1];
     if (slug) {
+      try {
+        sessionStorage.setItem('vector-at', slug);
+      } catch {}
       if (store.visit(slug)) {
         const note = document.createElement('div');
         note.className = 'vh-toast ok vh-solo';
@@ -946,7 +1071,10 @@ export function mount() {
         keys.thrust ? (boosting ? 1 : 0.85) + Math.sin(time * 30) * 0.1 : 0,
         1 - Math.exp(-dt * 10),
       );
-      if (ship.userData.shieldRing && !reduced) ship.userData.shieldRing.rotation.z += dt * 0.8;
+      if (!reduced && ship.userData.shieldRings.length) {
+        ship.userData.shieldRings[0].rotation.z += dt * 0.8;
+        ship.userData.shieldRings[1].rotation.y += dt * 0.55;
+      }
 
       /* invulnerability blink */
       invuln = Math.max(0, invuln - dt);
@@ -954,14 +1082,8 @@ export function mount() {
 
       /* --- weapons --- */
       fireTimer = Math.max(0, fireTimer - dt);
+      missileCd = Math.max(0, missileCd - dt);
       if (keys.fire) fireLasers();
-      if (missileStock < stats.maxMissiles) {
-        missileTimer += dt;
-        if (missileTimer >= stats.missileReload) {
-          missileTimer = 0;
-          missileStock++;
-        }
-      }
 
       /* bolts */
       for (const b of bolts) {
@@ -1076,11 +1198,15 @@ export function mount() {
         if (!reduced) lockReticle.rotation.z = time * 2;
       } else lockReticle.visible = false;
 
-      /* --- planets: moons, soft repulsion, docking --- */
+      /* --- planets: moons, labels, soft repulsion, docking --- */
       let nearest = -1;
       let nearestD = Infinity;
       for (let i = 0; i < planets.length; i++) {
         const pl = planets[i];
+        /* constant-ish screen size for the nameplate */
+        const labelD = camera.position.distanceTo(pl.group.position);
+        const k = THREE.MathUtils.clamp(labelD / 55, 0.7, 3.4);
+        pl.label.scale.set(28 * k, 7 * k, 1);
         if (!reduced) {
           pl.wire.rotation.y += dt * 0.12;
           for (const m of pl.moons) {
@@ -1147,7 +1273,7 @@ export function mount() {
         hud.querySelector('[data-vh-hp]').classList.toggle('low', hp / stats.maxHp < 0.3);
         hud.querySelector('[data-vh-stats]').textContent = `v ${Math.round(
           vel.length(),
-        )} · ◆ ${scrap} · ➤ ${missileStock} · mods ${mods.size}/${MODS.length}`;
+        )} · ◆ ${scrap} · ➤ ${missileCd > 0 ? '…' : '∞'} · mods ${mods.size}/${MODS.length}`;
         const lockEl = hud.querySelector('[data-vh-lock]');
         if (lockIdx >= 0) {
           lockEl.textContent = `◈ lock ${Math.round(
