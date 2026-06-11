@@ -1,0 +1,39 @@
+---
+import Base from '../layouts/Base.astro';
+import PostRow from '../components/PostRow.astro';
+import { getPosts } from '../utils/posts';
+
+const posts = await getPosts();
+const years = [...new Set(posts.map((p) => p.data.pubDate.getUTCFullYear()))];
+---
+
+<Base
+  title="xandreed — Effect, agents, evals"
+  description="Xand Reed builds an open-source coding agent on Effect.ts, in public. Writing on Effect, AI engineering, agents, and evals. No React."
+>
+  <div class="container">
+    <section class="intro">
+      <p>
+        I'm Xand Reed. I'm building <a href="https://github.com/xandreeddev/agent">efferent</a> — an
+        open-source coding agent that lives in the terminal — on Effect.ts, in public.
+      </p>
+      <p class="sub">
+        Notes on Effect, agents, and evals. Artifacts first, opinions later. No React.
+      </p>
+    </section>
+    <section class="post-list" aria-label="Posts">
+      {
+        years.map((year) => (
+          <div class="year-group">
+            <span class="label">{year}</span>
+            {posts
+              .filter((p) => p.data.pubDate.getUTCFullYear() === year)
+              .map((post) => (
+                <PostRow post={post} />
+              ))}
+          </div>
+        ))
+      }
+    </section>
+  </div>
+</Base>

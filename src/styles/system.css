@@ -1,0 +1,445 @@
+/* ---------------------------------------------------------------------------
+   SYSTEM — the retro desk.
+   Platinum beige under a 1-bit dither weave. White windows with pinstriped
+   title bars and hard 2px chrome, beveled buttons, snap hover-inversion.
+   Silkscreen pixel display over Chivo text, Fragment Mono for the machinery.
+--------------------------------------------------------------------------- */
+
+[data-style='system'] {
+  color-scheme: light;
+
+  --font-body: 'Chivo Variable', 'Helvetica Neue', Arial, sans-serif;
+  --font-display: 'Silkscreen', monospace;
+  --font-mono: 'Fragment Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --bg: oklch(87% 0.012 95);
+  --surface: oklch(99.5% 0.002 95);
+  --surface-2: oklch(93.5% 0.008 95);
+  --border: oklch(22% 0.006 90);
+  --text: oklch(20% 0.006 90);
+  --text-2: oklch(37% 0.008 90);
+  --text-3: oklch(48% 0.008 90);
+  --accent: oklch(40% 0.15 264);
+  --accent-dim: oklch(40% 0.15 264 / 0.1);
+  --ok-dim: oklch(60% 0.12 150 / 0.16);
+  --bad-dim: oklch(58% 0.16 25 / 0.14);
+
+  --ink: oklch(22% 0.006 90);
+
+  --radius-s: 0px;
+  --radius-m: 0px;
+  --border-w: 2px;
+  --display-weight: 400;
+}
+
+[data-style='system'] .brand-mark::before,
+[data-style='system'] .sw-glyph::before {
+  content: '▞';
+}
+
+/* 1-bit selection, no exceptions */
+[data-style='system'] ::selection {
+  background: var(--ink);
+  color: oklch(99.5% 0.002 95);
+}
+
+/* desktop dither */
+[data-style='system'] body {
+  line-height: 1.6;
+  background-image: conic-gradient(
+    oklch(0% 0 0 / 0.028) 25%,
+    transparent 0 50%,
+    oklch(0% 0 0 / 0.028) 0 75%,
+    transparent 0
+  );
+  background-size: 4px 4px;
+}
+
+[data-style='system'] a {
+  text-decoration-thickness: 2px;
+  text-decoration-color: var(--ink);
+  transition: none;
+}
+
+[data-style='system'] a:hover {
+  color: oklch(99.5% 0.002 95);
+  background: var(--ink);
+  text-decoration: none;
+}
+
+/* ----- menu bar ----- */
+
+[data-style='system'] .site-header {
+  background: var(--surface);
+  border-bottom: 2px solid var(--ink);
+}
+
+[data-style='system'] .site-header .container {
+  padding-block: 0.45rem;
+}
+
+[data-style='system'] .brand {
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
+[data-style='system'] .brand:hover {
+  background: var(--ink);
+  color: var(--surface);
+}
+
+[data-style='system'] .brand .brand-mark {
+  color: var(--ink);
+}
+
+[data-style='system'] .brand:hover .brand-mark {
+  color: var(--surface);
+}
+
+[data-style='system'] .site-nav {
+  gap: 0.25rem;
+}
+
+[data-style='system'] .site-nav a {
+  font-size: 0.72rem;
+  padding: 0.22rem 0.55rem;
+  color: var(--ink);
+}
+
+[data-style='system'] .site-nav a:hover,
+[data-style='system'] .site-nav a[aria-current='page'] {
+  background: var(--ink);
+  color: var(--surface);
+}
+
+[data-style='system'] .style-btn {
+  border: 2px solid var(--ink);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+  transition: none;
+  margin-left: 0.35rem;
+}
+
+[data-style='system'] .style-btn:hover {
+  background: var(--ink);
+  color: var(--surface);
+  border-color: var(--ink);
+}
+
+[data-style='system'] .style-btn:hover .sw-glyph {
+  color: var(--surface);
+}
+
+[data-style='system'] .style-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+
+[data-style='system'] .style-menu {
+  border: 2px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+[data-style='system'] .style-menu [role='option']:hover {
+  background: var(--ink);
+}
+
+[data-style='system'] .style-menu [role='option']:hover :is(.opt-name, .opt-tag) {
+  color: var(--surface);
+}
+
+/* ----- home ----- */
+
+[data-style='system'] .intro {
+  padding-block: 2.9rem 0.25rem;
+}
+
+[data-style='system'] .intro p {
+  font-weight: 480;
+}
+
+[data-style='system'] .intro .sub {
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 0.82rem;
+  color: var(--text-2);
+}
+
+/* year groups are windows with pinstriped title bars */
+[data-style='system'] .year-group {
+  background: var(--surface);
+  border: 2px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  margin-top: 1.8rem;
+}
+
+[data-style='system'] .year-group > .label {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 2px solid var(--ink);
+  font-family: var(--font-display);
+  font-size: 0.66rem;
+  letter-spacing: 0.05em;
+  color: var(--ink);
+}
+
+[data-style='system'] .year-group > .label::before,
+[data-style='system'] .year-group > .label::after {
+  content: '';
+  flex: 1;
+  height: 7px;
+  background: repeating-linear-gradient(0deg, var(--ink) 0 1px, transparent 1px 3px);
+}
+
+[data-style='system'] .post-row {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid oklch(80% 0.008 95);
+}
+
+[data-style='system'] .post-row:last-child {
+  border-bottom: 0;
+}
+
+[data-style='system'] .post-row .title {
+  font-weight: 700;
+  transition: none;
+}
+
+[data-style='system'] .post-row:hover {
+  background: var(--ink);
+}
+
+[data-style='system'] .post-row:hover :is(.title, .desc),
+[data-style='system'] .post-row:hover time {
+  color: var(--surface);
+}
+
+/* ----- post page: the article is a window ----- */
+
+[data-style='system'] .post-wrap {
+  background: var(--surface);
+  border: 2px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+  margin-block: 2.5rem 1rem;
+  padding: 3.4rem 1.9rem 2.2rem;
+}
+
+[data-style='system'] .post-wrap::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1.65rem;
+  border-bottom: 2px solid var(--ink);
+  background:
+    linear-gradient(var(--surface), var(--surface)) 0 0 / 100% 4px no-repeat,
+    linear-gradient(var(--surface), var(--surface)) 0 100% / 100% 4px no-repeat,
+    repeating-linear-gradient(0deg, var(--ink) 0 1px, var(--surface) 1px 4px);
+}
+
+/* close box */
+[data-style='system'] .post-wrap::after {
+  content: '';
+  position: absolute;
+  top: 0.38rem;
+  left: 0.7rem;
+  width: 0.85rem;
+  height: 0.85rem;
+  background: var(--surface);
+  border: 2px solid var(--ink);
+  box-shadow: 0 0 0 3px var(--surface);
+}
+
+[data-style='system'] .post-header .meta {
+  font-size: 0.72rem;
+}
+
+[data-style='system'] .post-header h1 {
+  font-size: clamp(1.25rem, 1.05rem + 1.3vw, 1.95rem);
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  font-weight: 700;
+}
+
+[data-style='system'] .post-header .lede {
+  font-style: italic;
+  font-size: var(--step-0);
+}
+
+[data-style='system'] .prose h2 {
+  font-size: 1.05rem;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  font-weight: 400;
+}
+
+[data-style='system'] .prose h3 {
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+[data-style='system'] .prose h4 {
+  font-family: var(--font-body);
+  font-weight: 700;
+}
+
+[data-style='system'] .prose .anchor {
+  font-size: 0.7em;
+}
+
+[data-style='system'] .prose blockquote {
+  font-style: normal;
+  border: 0;
+  border-left: 6px double var(--ink);
+  background: var(--surface-2);
+  padding: 0.8em 1.1em;
+  color: var(--text);
+}
+
+[data-style='system'] .prose img {
+  border: 2px solid var(--ink);
+  background: var(--surface);
+  padding: 4px;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+[data-style='system'] .prose table {
+  border: 2px solid var(--ink);
+  font-size: 0.74rem;
+}
+
+[data-style='system'] .prose th {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+[data-style='system'] .prose th,
+[data-style='system'] .prose td {
+  border: 1px solid var(--ink);
+  padding: 0.45rem 0.6rem;
+}
+
+[data-style='system'] hr {
+  border-top: 2px dashed var(--ink);
+}
+
+[data-style='system'] .prose .footnotes {
+  border-top: 2px solid var(--ink);
+}
+
+/* code: the gray utility panel */
+[data-style='system'] .astro-code span {
+  color: var(--shiki-light);
+}
+
+[data-style='system'] .prose pre.astro-code {
+  background: var(--surface-2) !important;
+  border: 2px solid var(--ink);
+  font-size: 0.76rem;
+  line-height: 1.65;
+}
+
+[data-style='system'] pre.astro-code[data-title]::before {
+  background: var(--surface);
+  border-bottom: 2px solid var(--ink);
+  padding: 0.45rem 1.1rem;
+  margin-top: -0.9rem;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+[data-style='system'] .prose code:not(pre code) {
+  background: var(--surface-2);
+  border: 1px solid var(--ink);
+  font-size: 0.78em;
+}
+
+[data-style='system'] .code-block .copy {
+  border: 2px solid var(--ink);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+  transition: none;
+}
+
+[data-style='system'] .code-block .copy:hover {
+  background: var(--ink);
+  color: var(--surface);
+}
+
+[data-style='system'] .code-block .copy:active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+
+[data-style='system'] .code-block .copy.ok {
+  background: var(--ink);
+  color: var(--surface);
+}
+
+/* toc floats outside the window */
+[data-style='system'] .toc-desktop .label {
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  color: var(--ink);
+}
+
+[data-style='system'] .toc-mobile {
+  border: 2px solid var(--ink);
+  background: var(--surface);
+}
+
+[data-style='system'] .post-footer .cta {
+  border-top: 2px solid var(--ink);
+  font-style: normal;
+}
+
+[data-style='system'] .post-nav {
+  border-top: 2px solid var(--ink);
+}
+
+/* ----- footer menu bar ----- */
+
+[data-style='system'] .site-footer {
+  background: var(--surface);
+  border-top: 2px solid var(--ink);
+}
+
+[data-style='system'] .site-footer .container {
+  font-size: 0.7rem;
+  color: var(--text-2);
+}
+
+[data-style='system'] .site-footer a {
+  padding: 0.15rem 0.4rem;
+}
+
+[data-style='system'] .site-footer a:hover {
+  color: var(--surface);
+}
+
+[data-style='system'] .terminal-404 {
+  border: 2px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+[data-style='system'] .draft-badge {
+  border: 2px solid var(--ink);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: 0;
+}
+
+[data-style='system'] .page h1 {
+  font-size: 1.4rem;
+  letter-spacing: 0.02em;
+}

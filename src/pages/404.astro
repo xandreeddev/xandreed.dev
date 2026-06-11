@@ -1,0 +1,19 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="404 — xandreed" description="Page not found.">
+  <div class="container">
+    <section class="page">
+      <h1>404</h1>
+      <pre class="terminal-404"><span class="prompt">❯</span> cd <span data-404-path>/somewhere</span>
+<span class="err">cd: no such file or directory</span>
+<span class="prompt">❯</span> <a href="/">cd ~</a></pre>
+    </section>
+  </div>
+  <script is:inline>
+    for (const el of document.querySelectorAll('[data-404-path]')) {
+      el.textContent = location.pathname;
+    }
+  </script>
+</Base>

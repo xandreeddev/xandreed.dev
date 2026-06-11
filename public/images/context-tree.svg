@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 300" font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="13">
+  <rect width="720" height="300" fill="#16140f"/>
+  <g stroke="#4a463d" fill="none">
+    <path d="M180 86 C 240 86, 250 60, 310 60"/>
+    <path d="M180 86 C 240 86, 250 150, 310 150"/>
+    <path d="M460 150 C 510 150, 515 230, 560 230"/>
+  </g>
+  <g>
+    <rect x="40" y="60" width="140" height="52" rx="8" fill="#221f19" stroke="#4a463d"/>
+    <text x="58" y="82" fill="#dcd8cf">root</text>
+    <text x="58" y="100" fill="#8a8478">conversation</text>
+  </g>
+  <g>
+    <rect x="310" y="34" width="150" height="52" rx="8" fill="#221f19" stroke="#4a463d"/>
+    <text x="328" y="56" fill="#dcd8cf">packages/core</text>
+    <text x="328" y="74" fill="#8a8478">spawned · done</text>
+  </g>
+  <g>
+    <rect x="310" y="124" width="150" height="52" rx="8" fill="#221f19" stroke="#e3a35c"/>
+    <text x="328" y="146" fill="#dcd8cf">packages/cli</text>
+    <text x="328" y="164" fill="#e3a35c">stale · HEAD moved</text>
+  </g>
+  <g>
+    <rect x="560" y="204" width="130" height="52" rx="8" fill="#221f19" stroke="#4a463d" stroke-dasharray="4 3"/>
+    <text x="578" y="226" fill="#dcd8cf">branch</text>
+    <text x="578" y="244" fill="#8a8478">seeded fork</text>
+  </g>
+  <text x="40" y="270" fill="#8a8478">every sub-agent is a persisted node — resume it, or branch from it</text>
+</svg>

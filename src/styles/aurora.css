@@ -1,0 +1,298 @@
+/* ---------------------------------------------------------------------------
+   AURORA — the signal lab.
+   Deep violet-navy void under a slow gradient mesh with film grain. Glass
+   surfaces, hairline borders, electric-cyan signal color. Syne display over
+   Hanken Grotesk text; Victor Mono for the chrome and the code.
+--------------------------------------------------------------------------- */
+
+[data-style='aurora'] {
+  color-scheme: dark;
+
+  --font-body: 'Hanken Grotesk Variable', 'Helvetica Neue', Arial, sans-serif;
+  --font-display: 'Syne Variable', sans-serif;
+  --font-mono: 'Victor Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --bg: oklch(14.5% 0.022 280);
+  --surface: oklch(19.5% 0.026 282);
+  --surface-2: oklch(23.5% 0.03 284);
+  --border: oklch(100% 0.01 280 / 0.12);
+  --text: oklch(93% 0.012 260);
+  --text-2: oklch(72% 0.02 270);
+  --text-3: oklch(56% 0.025 275);
+  --accent: oklch(84% 0.131 195);
+  --accent-dim: oklch(84% 0.131 195 / 0.11);
+  --ok-dim: oklch(75% 0.12 150 / 0.13);
+  --bad-dim: oklch(65% 0.15 25 / 0.14);
+
+  --violet: oklch(65% 0.2 305);
+  --magenta: oklch(68% 0.19 340);
+
+  --radius-s: 8px;
+  --radius-m: 14px;
+  --border-w: 1px;
+  --display-weight: 700;
+}
+
+[data-style='aurora'] .brand-mark::before,
+[data-style='aurora'] .sw-glyph::before {
+  content: '✦';
+}
+
+[data-style='aurora'] body {
+  line-height: 1.6;
+}
+
+/* the mesh: fixed layered radial gradients + dot lattice, slow hue drift */
+[data-style='aurora'] body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background:
+    radial-gradient(42rem 30rem at 12% -8%, oklch(84% 0.131 195 / 0.13), transparent 65%),
+    radial-gradient(50rem 36rem at 95% 12%, oklch(65% 0.2 305 / 0.15), transparent 62%),
+    radial-gradient(44rem 38rem at 55% 115%, oklch(68% 0.19 340 / 0.1), transparent 60%),
+    radial-gradient(oklch(100% 0 0 / 0.035) 1px, transparent 1px);
+  background-size: auto, auto, auto, 26px 26px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-style='aurora'] body::before {
+    animation: aurora-drift 50s ease-in-out infinite alternate;
+  }
+  @keyframes aurora-drift {
+    to {
+      filter: hue-rotate(28deg);
+    }
+  }
+}
+
+/* film grain */
+[data-style='aurora'] body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ----- glass header ----- */
+
+[data-style='aurora'] .site-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: oklch(14.5% 0.022 280 / 0.6);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
+  border-bottom: 1px solid oklch(100% 0.01 280 / 0.09);
+}
+
+[data-style='aurora'] .brand {
+  font-family: var(--font-display);
+  font-weight: 750;
+  letter-spacing: 0.01em;
+}
+
+[data-style='aurora'] .brand .brand-mark {
+  text-shadow: 0 0 14px oklch(84% 0.131 195 / 0.7);
+}
+
+[data-style='aurora'] .site-nav a {
+  font-size: 0.74rem;
+}
+
+[data-style='aurora'] .style-menu {
+  background: oklch(19% 0.026 282 / 0.92);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  box-shadow:
+    0 0 0 1px oklch(84% 0.131 195 / 0.08),
+    0 20px 50px oklch(0% 0 0 / 0.5);
+}
+
+/* ----- home ----- */
+
+[data-style='aurora'] .intro {
+  padding-block: 4rem 0.5rem;
+}
+
+[data-style='aurora'] .intro p {
+  font-family: var(--font-display);
+  font-size: var(--step-2);
+  font-weight: 740;
+  line-height: 1.22;
+  letter-spacing: -0.01em;
+  max-width: 33rem;
+  background: linear-gradient(100deg, var(--text) 15%, var(--accent) 55%, var(--violet) 95%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+[data-style='aurora'] .intro p a {
+  color: inherit;
+  text-decoration-color: oklch(84% 0.131 195 / 0.55);
+  text-decoration-thickness: 2px;
+}
+
+[data-style='aurora'] .intro .sub {
+  font-family: var(--font-body);
+  font-style: normal;
+  font-weight: 430;
+  background: none;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  color: var(--text-2);
+  font-size: var(--step-0);
+  margin-top: 1.1rem;
+}
+
+[data-style='aurora'] .year-group > .label {
+  border-bottom: 0;
+  color: var(--accent);
+  font-style: normal;
+}
+
+[data-style='aurora'] .year-group > .label::before {
+  content: '── ';
+  color: var(--text-3);
+}
+
+/* post rows become glass cards */
+[data-style='aurora'] .post-row {
+  background: oklch(100% 0 0 / 0.028);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  padding: 1.15rem 1.3rem;
+  margin-top: 0.95rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease;
+}
+
+[data-style='aurora'] .post-row:hover {
+  background: oklch(100% 0 0 / 0.045);
+  border-color: oklch(84% 0.131 195 / 0.45);
+  box-shadow:
+    0 0 0 1px oklch(84% 0.131 195 / 0.18),
+    0 14px 44px -14px oklch(84% 0.131 195 / 0.35);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-style='aurora'] .post-row:hover {
+    transform: translateY(-2px);
+  }
+}
+
+[data-style='aurora'] .post-row .title {
+  font-family: var(--font-display);
+  font-weight: 680;
+  font-size: calc(var(--step-0) * 1.05);
+  line-height: 1.3;
+  letter-spacing: -0.005em;
+}
+
+/* ----- post page ----- */
+
+[data-style='aurora'] .post-header h1 {
+  font-size: clamp(2.1rem, 1.75rem + 1.9vw, 3.05rem);
+  font-weight: 780;
+  line-height: 1.08;
+  letter-spacing: -0.015em;
+  background: linear-gradient(100deg, var(--text) 25%, var(--accent) 70%, var(--violet) 105%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+[data-style='aurora'] .post-header .lede {
+  font-style: normal;
+  font-weight: 420;
+  line-height: 1.5;
+}
+
+[data-style='aurora'] .post-header .meta {
+  font-size: 0.72rem;
+}
+
+[data-style='aurora'] .prose h2,
+[data-style='aurora'] .prose h3 {
+  letter-spacing: -0.005em;
+}
+
+[data-style='aurora'] .prose h4 {
+  font-style: normal;
+  font-weight: 650;
+}
+
+[data-style='aurora'] .prose blockquote {
+  font-style: normal;
+  background: oklch(100% 0 0 / 0.03);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--radius-m) var(--radius-m) 0;
+  padding: 0.9em 1.3em;
+  color: var(--text);
+}
+
+[data-style='aurora'] .prose img {
+  box-shadow: 0 18px 50px -20px oklch(0% 0 0 / 0.7);
+}
+
+/* code: glass panels with a faint signal glow */
+[data-style='aurora'] .prose pre.astro-code {
+  background: oklch(12% 0.02 282 / 0.72) !important;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow:
+    inset 0 1px 0 oklch(100% 0 0 / 0.05),
+    0 0 36px -18px oklch(84% 0.131 195 / 0.45);
+  font-size: 0.78rem;
+}
+
+[data-style='aurora'] pre.astro-code[data-title]::before {
+  color: var(--accent);
+  font-style: italic;
+}
+
+[data-style='aurora'] .prose code:not(pre code) {
+  background: oklch(100% 0 0 / 0.06);
+  border-color: oklch(100% 0 0 / 0.1);
+}
+
+[data-style='aurora'] .code-block .copy {
+  background: oklch(100% 0 0 / 0.07);
+  border-color: oklch(100% 0 0 / 0.12);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+/* gradient hairline on the footer */
+[data-style='aurora'] .site-footer {
+  border-top: 0;
+  position: relative;
+}
+
+[data-style='aurora'] .site-footer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    oklch(84% 0.131 195 / 0.5),
+    oklch(65% 0.2 305 / 0.5),
+    transparent
+  );
+}
+
+[data-style='aurora'] .terminal-404 {
+  background: oklch(12% 0.02 282 / 0.72);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}

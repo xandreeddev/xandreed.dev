@@ -1,0 +1,37 @@
+---
+import Base from '../../layouts/Base.astro';
+import PostRow from '../../components/PostRow.astro';
+import { getPosts, type Post } from '../../utils/posts';
+
+export async function getStaticPaths() {
+  const posts = await getPosts();
+  const tags = [...new Set(posts.flatMap((p) => p.data.tags))];
+  return tags.map((tag) => ({
+    params: { tag },
+    props: { tag, posts: posts.filter((p) => p.data.tags.includes(tag)) },
+  }));
+}
+
+interface Props {
+  tag: string;
+  posts: Post[];
+}
+
+const { tag, posts } = Astro.props;
+---
+
+<Base
+  title={`#${tag} — xandreed`}
+  description={`Posts tagged #${tag} — Effect, agents, and evals by Xand Reed.`}
+>
+  <div class="container">
+    <section class="page">
+      <p class="label">tagged</p>
+      <h1><span class="mono">#{tag}</span></h1>
+      <div class="post-list">
+        {posts.map((post) => <PostRow post={post} />)}
+      </div>
+      <p><a href="/">← all writing</a></p>
+    </section>
+  </div>
+</Base>

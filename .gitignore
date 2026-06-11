@@ -1,0 +1,11 @@
+# deps / build
+node_modules/
+dist/
+.astro/
+
+# tooling artifacts
+.playwright-mcp/
+
+# local working notes & review screenshots (root only — public/ assets are tracked)
+/*.png
+/PROMPT.md

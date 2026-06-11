@@ -1,0 +1,373 @@
+/* ---------------------------------------------------------------------------
+   GAZETTE — the print issue.
+   Warm paper, near-black ink, one vermillion accent. Fraunces (opsz, WONK)
+   display over Libre Franklin text, IBM Plex Mono for the technical matter.
+   Centered masthead, double rules, numbered index, drop caps, pull-quotes.
+--------------------------------------------------------------------------- */
+
+[data-style='gazette'] {
+  color-scheme: light;
+
+  --font-body: 'Libre Franklin Variable', 'Helvetica Neue', Arial, sans-serif;
+  --font-display: 'Fraunces Variable', Georgia, serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --bg: oklch(96.5% 0.009 90);
+  --surface: oklch(93.8% 0.012 90);
+  --surface-2: oklch(91% 0.014 90);
+  --border: oklch(80% 0.016 80);
+  --text: oklch(24% 0.012 60);
+  --text-2: oklch(42% 0.015 60);
+  --text-3: oklch(54% 0.013 70);
+  --accent: oklch(54% 0.185 35);
+  --accent-dim: oklch(54% 0.185 35 / 0.09);
+  --ok-dim: oklch(55% 0.12 150 / 0.1);
+  --bad-dim: oklch(55% 0.16 25 / 0.09);
+
+  --radius-s: 0px;
+  --radius-m: 0px;
+  --border-w: 1px;
+  --display-weight: 720;
+}
+
+[data-style='gazette'] .brand-mark::before,
+[data-style='gazette'] .sw-glyph::before {
+  content: '¶';
+}
+
+[data-style='gazette'] body {
+  font-size: calc(var(--step-0) * 0.94);
+  line-height: 1.62;
+}
+
+/* ----- masthead header ----- */
+
+[data-style='gazette'] .site-header {
+  border-bottom: 4px double var(--text);
+}
+
+[data-style='gazette'] .site-header .container {
+  flex-direction: column;
+  gap: 0.7rem;
+  padding-block: 1.7rem 1.05rem;
+}
+
+[data-style='gazette'] .brand {
+  font-family: var(--font-display);
+  font-size: 1.85rem;
+  font-weight: 900;
+  font-variation-settings: 'SOFT' 0, 'WONK' 1;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+[data-style='gazette'] .brand .brand-mark {
+  margin-right: 0.3ch;
+}
+
+[data-style='gazette'] .site-nav {
+  gap: 1.7rem;
+}
+
+[data-style='gazette'] .site-nav a {
+  font-size: 0.67rem;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+[data-style='gazette'] .site-nav a[aria-current='page'] {
+  color: var(--accent);
+  border-bottom: 1px solid var(--accent);
+  padding-bottom: 0.15rem;
+}
+
+[data-style='gazette'] .style-menu {
+  box-shadow: 0 10px 30px oklch(0% 0 0 / 0.13);
+  border-color: var(--text);
+}
+
+/* ----- home: the issue's table of contents ----- */
+
+[data-style='gazette'] .intro {
+  padding-block: 3.4rem 0.5rem;
+  text-align: center;
+}
+
+[data-style='gazette'] .intro p {
+  font-family: var(--font-display);
+  font-size: var(--step-2);
+  font-style: italic;
+  font-weight: 530;
+  line-height: 1.32;
+  letter-spacing: -0.005em;
+  max-width: 34rem;
+  margin-inline: auto;
+}
+
+[data-style='gazette'] .intro .sub {
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-top: 1.3rem;
+}
+
+[data-style='gazette'] .year-group > .label {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  border-bottom: 0;
+  padding-bottom: 0.3rem;
+  letter-spacing: 0.3em;
+  color: var(--text-2);
+}
+
+[data-style='gazette'] .year-group > .label::before,
+[data-style='gazette'] .year-group > .label::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--border);
+}
+
+[data-style='gazette'] .post-list {
+  counter-reset: gz;
+}
+
+[data-style='gazette'] .post-row {
+  counter-increment: gz;
+  grid-template-columns: 4.1rem 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 1.1rem;
+  row-gap: 0;
+  align-items: start;
+  padding-block: 1.35rem;
+}
+
+[data-style='gazette'] .post-row::before {
+  content: counter(gz, decimal-leading-zero);
+  grid-row: 1 / span 2;
+  font-family: var(--font-display);
+  font-size: 2.1rem;
+  font-weight: 900;
+  font-variation-settings: 'SOFT' 0, 'WONK' 1;
+  line-height: 1;
+  color: var(--text-3);
+  transition: color 0.15s ease;
+}
+
+[data-style='gazette'] .post-row time {
+  grid-column: 2;
+  font-size: 0.64rem;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+[data-style='gazette'] .post-row > span {
+  grid-column: 2;
+}
+
+[data-style='gazette'] .post-row .title {
+  font-family: var(--font-display);
+  font-size: var(--step-1);
+  font-weight: 740;
+  line-height: 1.18;
+  letter-spacing: -0.01em;
+  margin-top: 0.25rem;
+}
+
+[data-style='gazette'] .post-row .desc {
+  margin-top: 0.4rem;
+  line-height: 1.55;
+}
+
+[data-style='gazette'] .post-row:hover::before {
+  color: var(--accent);
+}
+
+@media (max-width: 540px) {
+  [data-style='gazette'] .post-row {
+    grid-template-columns: 3rem 1fr;
+  }
+  [data-style='gazette'] .post-row::before {
+    font-size: 1.6rem;
+  }
+}
+
+/* ----- post page ----- */
+
+[data-style='gazette'] .post-header {
+  text-align: center;
+}
+
+[data-style='gazette'] .post-header .meta {
+  justify-content: center;
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin-bottom: 1.4rem;
+}
+
+[data-style='gazette'] .post-header h1 {
+  font-size: clamp(2.3rem, 1.9rem + 2.4vw, 3.4rem);
+  font-weight: 900;
+  font-variation-settings: 'SOFT' 0, 'WONK' 1;
+  line-height: 1.04;
+  letter-spacing: -0.022em;
+  margin-bottom: 1rem;
+}
+
+[data-style='gazette'] .post-header .lede {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: var(--step-1);
+  line-height: 1.4;
+  max-width: 32rem;
+  margin-inline: auto;
+  margin-bottom: 1.8rem;
+}
+
+/* a centered hairline ornament between header and body */
+[data-style='gazette'] .post-header::after {
+  content: '※';
+  display: block;
+  color: var(--accent);
+  font-size: 0.95rem;
+  margin-bottom: 2rem;
+}
+
+/* drop cap on the opening paragraph */
+[data-style='gazette'] .prose > p:first-of-type::first-letter {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-variation-settings: 'SOFT' 0, 'WONK' 1;
+  font-size: 3.55em;
+  line-height: 0.78;
+  float: left;
+  padding: 0.1em 0.14em 0 0;
+  color: var(--accent);
+}
+
+[data-style='gazette'] .prose h2 {
+  font-weight: 800;
+  letter-spacing: -0.015em;
+}
+
+[data-style='gazette'] .prose h4 {
+  font-weight: 620;
+}
+
+[data-style='gazette'] .prose a {
+  text-decoration-thickness: 1.5px;
+}
+
+/* pull-quote treatment */
+[data-style='gazette'] .prose blockquote {
+  border-left: 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 1.4em 1.5rem;
+  margin: 2.2em 0;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: var(--step-1);
+  font-weight: 530;
+  line-height: 1.38;
+  color: var(--text);
+}
+
+[data-style='gazette'] .prose blockquote::before {
+  content: '“';
+  display: block;
+  font-size: 2.2em;
+  font-weight: 900;
+  line-height: 0.4;
+  padding-top: 0.25em;
+  margin-bottom: 0.35em;
+  color: var(--accent);
+}
+
+[data-style='gazette'] hr {
+  border: 0;
+  text-align: center;
+  margin: 3rem 0;
+}
+
+[data-style='gazette'] hr::before {
+  content: '✻ ✻ ✻';
+  letter-spacing: 1.2em;
+  padding-left: 1.2em;
+  color: var(--text-3);
+  font-size: 0.8rem;
+}
+
+/* code as technical matter: paper-white plates, ink rules */
+[data-style='gazette'] .astro-code span {
+  color: var(--shiki-light);
+}
+
+[data-style='gazette'] .prose pre.astro-code {
+  background: oklch(98.6% 0.004 90) !important;
+  border-color: oklch(30% 0.012 60 / 0.45);
+  font-size: 0.78rem;
+}
+
+[data-style='gazette'] pre.astro-code[data-title]::before {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.62rem;
+  border-bottom-color: var(--border);
+}
+
+[data-style='gazette'] .prose code:not(pre code) {
+  background: var(--accent-dim);
+  border: 0;
+  color: oklch(38% 0.1 35);
+}
+
+[data-style='gazette'] .code-block .copy {
+  background: var(--bg);
+  border-color: oklch(30% 0.012 60 / 0.45);
+}
+
+/* footnotes & footer colophon */
+
+[data-style='gazette'] .post-footer .cta {
+  font-family: var(--font-display);
+  text-align: center;
+  border-top: 0;
+}
+
+[data-style='gazette'] .site-footer {
+  border-top: 4px double var(--text);
+  margin-top: 5rem;
+}
+
+[data-style='gazette'] .site-footer .container {
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+  gap: 0.45rem;
+  padding-block: 1.8rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+[data-style='gazette'] .site-footer .container::after {
+  content: 'set in fraunces & libre franklin';
+  color: var(--text-3);
+  letter-spacing: 0.18em;
+  font-size: 0.6rem;
+}
+
+/* the 404 terminal reads as a printed terminal transcript */
+[data-style='gazette'] .terminal-404 {
+  background: oklch(98.6% 0.004 90);
+  border-color: oklch(30% 0.012 60 / 0.45);
+}

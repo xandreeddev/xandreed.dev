@@ -1,0 +1,549 @@
+/* ---------------------------------------------------------------------------
+   ZINE — the xerox riot.
+   Bone paper, pure black ink, acid-yellow highlighter, one hot-pink scream.
+   Archivo (expanded, black) shouting over Space Mono typewriter chrome.
+   Hard borders, offset shadows, rotated stickers, caution-tape rules.
+--------------------------------------------------------------------------- */
+
+[data-style='zine'] {
+  color-scheme: light;
+
+  --font-body: 'Archivo Variable', 'Helvetica Neue', Arial, sans-serif;
+  --font-display: 'Archivo Variable', 'Arial Black', sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --bg: oklch(95% 0.012 95);
+  --surface: oklch(99% 0.002 95);
+  --surface-2: oklch(91.5% 0.015 95);
+  --border: oklch(13% 0 0);
+  --text: oklch(13% 0 0);
+  --text-2: oklch(30% 0 0);
+  --text-3: oklch(44% 0 0);
+  --accent: oklch(56% 0.23 354);
+  --accent-dim: oklch(56% 0.23 354 / 0.12);
+  --ok-dim: oklch(80% 0.2 140 / 0.28);
+  --bad-dim: oklch(70% 0.18 20 / 0.22);
+
+  --acid: oklch(91% 0.21 115);
+  --ink: oklch(13% 0 0);
+
+  --radius-s: 0px;
+  --radius-m: 0px;
+  --border-w: 2px;
+  --display-weight: 900;
+}
+
+[data-style='zine'] .brand-mark::before,
+[data-style='zine'] .sw-glyph::before {
+  content: '✱';
+}
+
+[data-style='zine'] ::selection {
+  background: var(--acid);
+  color: var(--ink);
+}
+
+[data-style='zine'] body {
+  line-height: 1.58;
+}
+
+[data-style='zine'] a {
+  text-decoration-color: var(--ink);
+  text-decoration-thickness: 2px;
+}
+
+[data-style='zine'] a:hover {
+  color: var(--ink);
+  background: var(--acid);
+}
+
+/* ----- header ----- */
+
+[data-style='zine'] .site-header {
+  border-bottom: 3px solid var(--ink);
+  background: var(--surface);
+}
+
+[data-style='zine'] .brand {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 900;
+  font-variation-settings: 'wdth' 125;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+}
+
+[data-style='zine'] .brand:hover {
+  background: none;
+  color: var(--accent);
+}
+
+[data-style='zine'] .site-nav {
+  gap: 0.55rem;
+}
+
+[data-style='zine'] .site-nav a {
+  font-weight: 700;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  border: 2px solid var(--ink);
+  padding: 0.18rem 0.5rem;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+[data-style='zine'] .site-nav a:hover {
+  background: var(--ink);
+  color: var(--acid);
+}
+
+[data-style='zine'] .site-nav a[aria-current='page'] {
+  background: var(--acid);
+  color: var(--ink);
+}
+
+@media (max-width: 540px) {
+  [data-style='zine'] .brand {
+    font-size: 0.95rem;
+  }
+  [data-style='zine'] .site-nav {
+    gap: 0.4rem;
+  }
+  [data-style='zine'] .site-nav a {
+    font-size: 0.62rem;
+    padding: 0.15rem 0.4rem;
+  }
+}
+
+[data-style='zine'] .style-btn {
+  border: 2px solid var(--ink);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 700;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+[data-style='zine'] .style-btn:hover {
+  background: var(--acid);
+  color: var(--ink);
+}
+
+[data-style='zine'] .style-btn:active {
+  transform: translate(3px, 3px);
+  box-shadow: none;
+}
+
+[data-style='zine'] .style-menu {
+  border: 2px solid var(--ink);
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+[data-style='zine'] .style-menu [role='option']:hover {
+  background: var(--acid);
+}
+
+/* ----- home ----- */
+
+[data-style='zine'] .intro {
+  padding-block: 3.4rem 0.75rem;
+}
+
+[data-style='zine'] .intro > p:first-child {
+  display: inline;
+  font-family: var(--font-display);
+  font-size: var(--step-2);
+  font-weight: 900;
+  font-variation-settings: 'wdth' 118;
+  text-transform: uppercase;
+  line-height: 1.32;
+  background: var(--acid);
+  padding: 0.06em 0.18em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+[data-style='zine'] .intro .sub {
+  display: block;
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 1.4rem;
+}
+
+[data-style='zine'] .year-group > .label {
+  display: inline-block;
+  background: var(--ink);
+  color: var(--acid);
+  font-weight: 700;
+  font-size: 0.78rem;
+  padding: 0.28rem 0.65rem;
+  border-bottom: 0;
+  transform: rotate(-1.2deg);
+}
+
+[data-style='zine'] .post-row {
+  grid-template-columns: 1fr;
+  gap: 0.45rem;
+  background: var(--surface);
+  border: 2px solid var(--ink);
+  box-shadow: 5px 5px 0 var(--ink);
+  padding: 1.05rem 1.15rem 1.15rem;
+  margin-top: 1.5rem;
+}
+
+[data-style='zine'] .post-row:nth-child(odd) {
+  transform: rotate(0.45deg);
+}
+
+[data-style='zine'] .post-row:nth-child(even) {
+  transform: rotate(-0.4deg);
+}
+
+[data-style='zine'] .post-row:hover {
+  transform: rotate(0deg) translate(-2px, -2px);
+  box-shadow: 8px 8px 0 var(--ink);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-style='zine'] .post-row {
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+}
+
+[data-style='zine'] .post-row time {
+  justify-self: start;
+  background: var(--acid);
+  border: 2px solid var(--ink);
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 0.68rem;
+  padding: 0.08rem 0.4rem;
+}
+
+[data-style='zine'] .post-row .title {
+  font-family: var(--font-display);
+  font-size: var(--step-1);
+  font-weight: 900;
+  font-variation-settings: 'wdth' 120;
+  text-transform: uppercase;
+  line-height: 1.12;
+  letter-spacing: 0;
+}
+
+[data-style='zine'] .post-row:hover .title {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 4px;
+  text-underline-offset: 0.12em;
+}
+
+[data-style='zine'] .post-row .desc {
+  margin-top: 0.3rem;
+}
+
+/* ----- post page ----- */
+
+[data-style='zine'] .post-header .meta {
+  gap: 0.45rem;
+  margin-bottom: 1.5rem;
+}
+
+[data-style='zine'] .post-header .meta > :is(time, span):not(.sep, .draft-badge),
+[data-style='zine'] .post-header .meta .tag {
+  border: 2px solid var(--ink);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  padding: 0.12rem 0.45rem;
+}
+
+[data-style='zine'] .post-header .meta .sep {
+  display: none;
+}
+
+[data-style='zine'] .post-header .meta .tag::before {
+  color: var(--accent);
+}
+
+[data-style='zine'] .post-header .meta .tag:hover {
+  background: var(--ink);
+  color: var(--acid);
+}
+
+[data-style='zine'] .draft-badge {
+  background: var(--accent);
+  color: var(--surface);
+  border: 2px solid var(--ink);
+  border-radius: 0;
+  font-weight: 700;
+}
+
+[data-style='zine'] .post-header h1 {
+  display: inline;
+  font-size: clamp(2.1rem, 1.7rem + 2.4vw, 3.3rem);
+  font-weight: 900;
+  font-variation-settings: 'wdth' 122;
+  text-transform: uppercase;
+  line-height: 1.16;
+  letter-spacing: -0.005em;
+  background: var(--acid);
+  padding: 0.04em 0.16em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+[data-style='zine'] .post-header .lede {
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  margin-top: 1.3rem;
+  border-left: 5px solid var(--ink);
+  padding-left: 0.9rem;
+}
+
+/* prose: shouted crossheads, taped quotes */
+
+[data-style='zine'] .prose h2,
+[data-style='zine'] .prose h3 {
+  display: inline-block;
+  text-transform: uppercase;
+  text-wrap: initial;
+  line-height: 1.15;
+}
+
+[data-style='zine'] .prose h2 {
+  font-variation-settings: 'wdth' 118;
+  background: var(--ink);
+  color: var(--surface);
+  padding: 0.12em 0.4em;
+  transform: rotate(-0.5deg);
+}
+
+[data-style='zine'] .prose h2 .anchor {
+  color: var(--acid);
+}
+
+[data-style='zine'] .prose h3 {
+  font-variation-settings: 'wdth' 112;
+  background: var(--acid);
+  padding: 0.1em 0.35em;
+}
+
+[data-style='zine'] .prose h4 {
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  letter-spacing: 0.05em;
+}
+
+[data-style='zine'] .prose ul li::marker {
+  content: '✕ ';
+  color: var(--ink);
+  font-weight: 700;
+}
+
+[data-style='zine'] .prose ol li::marker {
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+[data-style='zine'] .prose blockquote {
+  border: 0;
+  background: var(--ink);
+  color: var(--surface);
+  font-style: normal;
+  font-weight: 500;
+  padding: 1em 1.25em;
+  transform: rotate(-0.6deg);
+  margin: 2em 0;
+}
+
+[data-style='zine'] .prose blockquote strong {
+  color: var(--acid);
+}
+
+[data-style='zine'] .prose img {
+  border: 2px solid var(--ink);
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+[data-style='zine'] .prose table {
+  font-size: 0.74rem;
+  border: 2px solid var(--ink);
+}
+
+[data-style='zine'] .prose th {
+  background: var(--ink);
+  color: var(--surface);
+  letter-spacing: 0.08em;
+}
+
+[data-style='zine'] .prose th,
+[data-style='zine'] .prose td {
+  border: 2px solid var(--ink);
+  padding: 0.5rem 0.7rem;
+}
+
+[data-style='zine'] hr {
+  border: 0;
+  height: 13px;
+  margin: 3rem 0;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--ink) 0 9px,
+    var(--acid) 9px 18px
+  );
+}
+
+[data-style='zine'] hr::before {
+  content: none;
+}
+
+[data-style='zine'] .prose .footnotes {
+  border-top: 3px solid var(--ink);
+}
+
+/* code: white plates, hard shadows, black title tape */
+[data-style='zine'] .astro-code span {
+  color: var(--shiki-light);
+}
+
+[data-style='zine'] .prose pre.astro-code {
+  background: var(--surface) !important;
+  border: 2px solid var(--ink);
+  box-shadow: 6px 6px 0 var(--ink);
+  font-size: 0.76rem;
+  line-height: 1.65;
+}
+
+[data-style='zine'] pre.astro-code[data-title]::before {
+  background: var(--ink);
+  color: var(--acid);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.66rem;
+  padding: 0.5rem 1.1rem;
+  margin-top: -0.9rem;
+  border-bottom: 0;
+}
+
+[data-style='zine'] .prose pre.astro-code .line.highlighted {
+  background: oklch(91% 0.21 115 / 0.45);
+  box-shadow: inset 4px 0 0 var(--ink);
+}
+
+[data-style='zine'] .prose code:not(pre code) {
+  background: var(--surface);
+  border: 2px solid var(--ink);
+  font-size: 0.78em;
+  padding: 0.02em 0.28em;
+}
+
+[data-style='zine'] .code-block .copy {
+  border: 2px solid var(--ink);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 700;
+  box-shadow: 3px 3px 0 var(--ink);
+  opacity: 1;
+}
+
+[data-style='zine'] .code-block .copy:hover,
+[data-style='zine'] .code-block .copy.ok {
+  background: var(--acid);
+  color: var(--ink);
+}
+
+[data-style='zine'] .code-block .copy:active {
+  transform: translate(3px, 3px);
+  box-shadow: none;
+}
+
+/* post footer + nav */
+
+[data-style='zine'] .post-footer .cta {
+  font-style: normal;
+  font-weight: 500;
+  border-top: 3px solid var(--ink);
+}
+
+[data-style='zine'] .post-nav {
+  border-top: 3px solid var(--ink);
+}
+
+[data-style='zine'] .post-nav .t {
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+/* marquee strip above the footer */
+[data-style='zine'] .deco {
+  display: block;
+  overflow: hidden;
+  margin-top: 4.5rem;
+  background: var(--ink);
+  color: var(--acid);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  padding-block: 0.5rem;
+  white-space: nowrap;
+}
+
+[data-style='zine'] .deco::before {
+  content: 'artifacts first ✱ opinions later ✱ no react ✱ effect all the way down ✱ artifacts first ✱ opinions later ✱ no react ✱ effect all the way down ✱ artifacts first ✱ opinions later ✱ no react ✱ effect all the way down ✱ artifacts first ✱ opinions later ✱ no react ✱ effect all the way down ✱ ';
+  display: inline-block;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-style='zine'] .deco::before {
+    animation: zine-marquee 30s linear infinite;
+  }
+  @keyframes zine-marquee {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+}
+
+[data-style='zine'] .site-footer {
+  border-top: 3px solid var(--ink);
+  background: var(--surface);
+  margin-top: 0;
+}
+
+[data-style='zine'] .site-footer .container {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.66rem;
+}
+
+[data-style='zine'] .terminal-404 {
+  border: 2px solid var(--ink);
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+/* toc */
+
+[data-style='zine'] .toc-mobile {
+  border: 2px solid var(--ink);
+  background: var(--surface);
+}
+
+[data-style='zine'] .toc-mobile summary,
+[data-style='zine'] .toc-desktop .label {
+  font-weight: 700;
+  color: var(--ink);
+}

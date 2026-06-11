@@ -1,0 +1,229 @@
+---
+/* Fonts are declared for every style; the browser only downloads the families
+   the active [data-style] actually renders with. */
+// phosphor
+import '@fontsource-variable/newsreader/opsz.css';
+import '@fontsource-variable/newsreader/opsz-italic.css';
+import '@fontsource-variable/jetbrains-mono';
+// gazette
+import '@fontsource-variable/fraunces/opsz.css';
+import '@fontsource-variable/fraunces/opsz-italic.css';
+import '@fontsource-variable/libre-franklin';
+import '@fontsource-variable/libre-franklin/wght-italic.css';
+import '@fontsource/ibm-plex-mono/400.css';
+import '@fontsource/ibm-plex-mono/500.css';
+// aurora
+import '@fontsource-variable/syne';
+import '@fontsource-variable/hanken-grotesk';
+import '@fontsource-variable/hanken-grotesk/wght-italic.css';
+import '@fontsource-variable/victor-mono';
+import '@fontsource-variable/victor-mono/wght-italic.css';
+// zine
+import '@fontsource-variable/archivo/wdth.css';
+import '@fontsource-variable/archivo/wdth-italic.css';
+import '@fontsource/space-mono/400.css';
+import '@fontsource/space-mono/700.css';
+import '@fontsource/space-mono/400-italic.css';
+// system
+import '@fontsource/silkscreen/400.css';
+import '@fontsource/silkscreen/700.css';
+import '@fontsource-variable/chivo';
+import '@fontsource-variable/chivo/wght-italic.css';
+import '@fontsource/fragment-mono/400.css';
+import '@fontsource/fragment-mono/400-italic.css';
+
+import '../styles/global.css';
+import '../styles/gazette.css';
+import '../styles/aurora.css';
+import '../styles/zine.css';
+import '../styles/system.css';
+
+interface Props {
+  title: string;
+  description: string;
+  ogImage?: string;
+  ogType?: 'website' | 'article';
+}
+
+const { title, description, ogImage = '/og-default.png', ogType = 'website' } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const ogImageUrl = new URL(ogImage, Astro.site);
+const path = Astro.url.pathname;
+const current = (p: string) =>
+  p === '/' ? (path === '/' ? 'page' : undefined) : path.startsWith(p) ? 'page' : undefined;
+
+const STYLES = [
+  { id: 'phosphor', tag: 'terminal editorial', dots: ['oklch(16.5% 0.008 80)', 'oklch(87% 0.012 85)', 'oklch(78% 0.125 70)'] },
+  { id: 'gazette', tag: 'print issue', dots: ['oklch(96.5% 0.009 90)', 'oklch(24% 0.012 60)', 'oklch(54% 0.185 35)'] },
+  { id: 'aurora', tag: 'signal lab', dots: ['oklch(14.5% 0.022 280)', 'oklch(83% 0.13 195)', 'oklch(65% 0.2 305)'] },
+  { id: 'zine', tag: 'xerox riot', dots: ['oklch(95% 0.012 95)', 'oklch(13% 0 0)', 'oklch(91% 0.21 115)'] },
+  { id: 'system', tag: 'retro desk', dots: ['oklch(87% 0.012 95)', 'oklch(20% 0.006 90)', 'oklch(99.5% 0.002 95)'] },
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script is:inline>
+      (() => {
+        const known = ['phosphor', 'gazette', 'aurora', 'zine', 'system'];
+        let s = null;
+        try {
+          s = localStorage.getItem('style');
+        } catch {}
+        if (!known.includes(s))
+          s = matchMedia('(prefers-color-scheme: light)').matches ? 'gazette' : 'phosphor';
+        document.documentElement.dataset.style = s;
+      })();
+    </script>
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="author" content="Xand Reed" />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <link rel="alternate" type="application/rss+xml" title="xandreed" href="/rss.xml" />
+    <meta property="og:type" content={ogType} />
+    <meta property="og:site_name" content="xandreed" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImageUrl} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@xandreeddev" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImageUrl} />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">skip to content</a>
+    <header class="site-header">
+      <div class="container">
+        <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>xandreed</a>
+        <nav class="site-nav" aria-label="Site">
+          <a href="/" aria-current={current('/')}>writing</a>
+          <a href="/about/" aria-current={current('/about')}>about</a>
+          <a href="/rss.xml">rss</a>
+          <div class="style-switch" id="style-switch">
+            <button
+              class="style-btn"
+              type="button"
+              aria-haspopup="listbox"
+              aria-expanded="false"
+              aria-label="Switch visual style"
+            >
+              <span class="sw-glyph" aria-hidden="true"></span>
+              <span class="sw-name" data-style-name>style</span>
+            </button>
+            <div class="style-menu" role="listbox" aria-label="Visual styles" hidden>
+              {
+                STYLES.map((s) => (
+                  <button
+                    type="button"
+                    role="option"
+                    data-style-opt={s.id}
+                    aria-selected="false"
+                    style={`--d1:${s.dots[0]};--d2:${s.dots[1]};--d3:${s.dots[2]}`}
+                  >
+                    <span class="dots" aria-hidden="true">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                    <span class="opt-name">{s.id}</span>
+                    <span class="opt-tag">{s.tag}</span>
+                  </button>
+                ))
+              }
+            </div>
+          </div>
+        </nav>
+      </div>
+    </header>
+    <main id="main">
+      <slot />
+    </main>
+    <div class="deco" aria-hidden="true"></div>
+    <footer class="site-footer">
+      <div class="container">
+        <span>© 2026 Xand Reed</span>
+        <span class="links">
+          <a href="https://x.com/xandreeddev">x</a>
+          <a href="https://github.com/xandreeddev">github</a>
+          <a href="/rss.xml">rss</a>
+        </span>
+      </div>
+    </footer>
+    <script is:inline>
+      (() => {
+        const root = document.documentElement;
+        const sw = document.getElementById('style-switch');
+        if (!sw) return;
+        const btn = sw.querySelector('.style-btn');
+        const menu = sw.querySelector('.style-menu');
+        const nameEl = sw.querySelector('[data-style-name]');
+        const opts = [...sw.querySelectorAll('[data-style-opt]')];
+        const sync = () => {
+          const cur = root.dataset.style;
+          nameEl.textContent = cur;
+          for (const o of opts) o.setAttribute('aria-selected', String(o.dataset.styleOpt === cur));
+        };
+        const close = () => {
+          menu.hidden = true;
+          btn.setAttribute('aria-expanded', 'false');
+        };
+        btn.addEventListener('click', () => {
+          const open = menu.hidden;
+          menu.hidden = !open;
+          btn.setAttribute('aria-expanded', String(open));
+          if (open) sync();
+        });
+        for (const o of opts)
+          o.addEventListener('click', () => {
+            root.dataset.style = o.dataset.styleOpt;
+            try {
+              localStorage.setItem('style', o.dataset.styleOpt);
+            } catch {}
+            sync();
+            close();
+            btn.focus();
+          });
+        document.addEventListener('click', (e) => {
+          if (!sw.contains(e.target)) close();
+        });
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape' && !menu.hidden) {
+            close();
+            btn.focus();
+          }
+        });
+        sync();
+      })();
+
+      for (const pre of document.querySelectorAll('pre.astro-code')) {
+        const wrap = document.createElement('div');
+        wrap.className = 'code-block';
+        pre.replaceWith(wrap);
+        wrap.append(pre);
+        const btn = document.createElement('button');
+        btn.className = 'copy';
+        btn.type = 'button';
+        btn.textContent = 'copy';
+        btn.setAttribute('aria-label', 'Copy code to clipboard');
+        btn.addEventListener('click', async () => {
+          const code = pre.querySelector('code');
+          await navigator.clipboard.writeText((code?.textContent ?? '').replace(/\n$/, ''));
+          btn.textContent = 'copied';
+          btn.classList.add('ok');
+          setTimeout(() => {
+            btn.textContent = 'copy';
+            btn.classList.remove('ok');
+          }, 1600);
+        });
+        wrap.append(btn);
+      }
+    </script>
+  </body>
+</html>

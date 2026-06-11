@@ -1,0 +1,27 @@
+---
+import { isoDate, type Post } from '../utils/posts';
+
+interface Props {
+  post: Post;
+}
+
+const { post } = Astro.props;
+---
+
+<a class="post-row" href={`/posts/${post.id}/`}>
+  <time datetime={post.data.pubDate.toISOString()}>{isoDate(post.data.pubDate)}</time>
+  <span>
+    <span class="title">
+      {post.data.title}
+      {post.data.draft && <span class="draft-badge">draft</span>}
+    </span>
+    <span class="desc">{post.data.description}</span>
+  </span>
+</a>
+
+<style>
+  .post-row .title,
+  .post-row .desc {
+    display: block;
+  }
+</style>
