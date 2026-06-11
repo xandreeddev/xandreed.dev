@@ -3,6 +3,7 @@ title: 'A terminal UI with SolidJS signals and no React'
 description: "Streaming agent output is a fine-grained reactivity problem. Why efferent's TUI is OpenTUI + Solid signals instead of Ink, and what the cost model looks like."
 pubDate: 2026-06-12
 tags: [tui, typescript, agents]
+draft: true
 ---
 
 An agent TUI has an unusual rendering profile: long stretches of nothing, then a burst of hundreds of tiny updates per second — token counters ticking, a spinner, new conversation lines, a context gauge — each touching a few terminal cells. The natural way to say "this number changed" should cost about as much as changing the number.
