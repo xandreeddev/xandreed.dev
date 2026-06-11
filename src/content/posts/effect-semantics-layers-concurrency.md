@@ -12,7 +12,7 @@ Effect.Effect<A, E, R>
 // a program that succeeds with A, fails with E, and needs R to run
 ```
 
-The three type parameters are the three acts of this post: `R` is dependencies, `E` is failures, and the runtime that executes them is concurrency.
+Two of those parameters get an act of this post each — `R` is dependencies, `E` is failures — and the third act belongs to the runtime that executes the descriptions: concurrency.
 
 Nothing here is a toy. Every snippet is lifted from [efferent](https://github.com/xandreeddev/agent), a coding agent I'm building on Effect — long-running, concurrent, full of slow IO and humans who press Esc at inconvenient moments. Which is to say: a stress test for exactly the three channels.
 
@@ -67,7 +67,7 @@ export class ConversationStore extends Context.Tag(
 )<
   ConversationStore,
   {
-    readonly create: () => Effect.Effect<ConversationId, ConversationStoreError> // …
+    readonly create: () => Effect.Effect<ConversationId, ConversationStoreError>
     readonly append: (
       id: ConversationId,
       msg: AgentMessage,
@@ -77,7 +77,7 @@ export class ConversationStore extends Context.Tag(
 >() {}
 ```
 
-(The `Data.TaggedError` at the top is Act II's subject — for now, read it as a failure type with a name.) Using a service is one line — `const store = yield* ConversationStore` — and the act of using it adds the tag to the effect's `R`. That's the part that changes how a codebase feels: **the R channel is the architecture, inferred.** A use-case that reads the store and runs shell commands has type `Effect<A, E, ConversationStore | Shell>`, whether or not you remembered to document that. You cannot quietly reach into the database from a function whose type says it doesn't.
+(The `Data.TaggedError` at the top is Act II's subject — for now, read it as a failure type with a name.) Using a service is one line — `const store = yield* ConversationStore` — because a tag is itself a little effect: one that succeeds with its service. And the act of using it adds the tag to the surrounding effect's `R`. That's the part that changes how a codebase feels: **the R channel is the architecture, inferred.** A use-case that reads the store and runs shell commands has type `Effect<A, E, ConversationStore | Shell>`, whether or not you remembered to document that. You cannot quietly reach into the database from a function whose type says it doesn't.
 
 This is ports-and-adapters, but with the dependency direction enforced by the compiler. [efferent](https://github.com/xandreeddev/agent)'s core package declares twelve such tags — `FileSystem`, `Shell`, `Approval`, `AuthStore`, `ModelRegistry`, `SettingsStore`, and so on — and imports zero provider SDKs. The adapters package implements them. Core compiles without knowing Postgres exists.
 
@@ -115,6 +115,8 @@ That's the entire composition root of a multi-provider, multi-mode CLI. Three op
 - **`Layer.provide`** — feed dependencies *into* a layer and hide them. `WebSearchLive.pipe(Layer.provide(FetchHttpClient.layer))` is web search with its HTTP client baked in; the client doesn't leak into the app's environment.
 - **`Layer.provideMerge`** — feed dependencies in *and keep them exposed*. The highlighted line is why it exists: `CredentialsLive` must satisfy `ModelLive` and `WebSearchLive` *and* remain readable by `main` itself. Plain `provide` would wire the model tier and then hide the auth store from everyone else.
 
+This is also where the prelude's loose end ties off. The program from Act I carries `ConversationStore | Shell | …` in its `R`; at the entry point it gets `Effect.provide(AppLive)`, and providing *subtracts* — every service the layer supplies disappears from the requirement. A fully provided program has `R = never`, and that's the only thing a runtime will run. Forget one service and the missing tag is a compile error at the one line where wiring happens.
+
 Two more semantics hide in plain sight. First, **memoization**: layers are built once per layer *value*. Reference the same `const` in five places and Effect constructs one instance — [efferent](https://github.com/xandreeddev/agent)'s eval environment leans on this, naming `const FsLive = LocalFileSystemLive` precisely so two references resolve to a single `FileSystem`. Second, **a layer can be chosen by a program**, because of course it can — it's a value:
 
 ```ts title="packages/adapters/src/database/migrator.ts"
@@ -137,7 +139,7 @@ export const StoresLive = Layer.unwrapEffect(
 
 `Layer.unwrapEffect` runs an effect that *returns a layer* — here, reading config and picking the whole persistence stack. Note both stores ride one database layer: providing each store its own self-contained DB stack would open two connections and race the migrator on the same file. The layer graph isn't just wiring; it's where resource-sharing decisions become visible.
 
-## The swap: one program, three worlds
+## Act I, scene 3 — the swap: one program, three worlds
 
 Here's the payoff for all that ceremony. [efferent](https://github.com/xandreeddev/agent)'s eval suites run the *actual agent* — same loop, same prompts, same toolkit — inside a different world:
 
@@ -206,9 +208,9 @@ Every eval case gets a fresh directory and *cannot* leak it. A failing scorer, a
 
 A `Scope` is this idea reified: a lifetime, as a value, that any number of acquisitions can attach to — when the scope closes, every finalizer runs in reverse order. You rarely touch one directly; you meet it through the combinators that open one around a region: `Layer.scoped` ties a service to the application's lifetime (its finalizer runs at shutdown), and `Effect.scoped` / `Stream.unwrapScoped` open a scope around a single call. That last one is the next section's whole move.
 
-## Where layers stop
+## Act I, coda — where layers stop
 
-One discipline keeps this from going wrong: **layers answer "the program is different"; state answers "the request is different."** Tests run a different program — layer swap. A user switching LLM providers mid-session is changing a preference — that must *not* be a layer, or you're rebuilding the runtime to honor a dropdown.
+One discipline keeps the layer machinery from going wrong: **layers answer "the program is different"; state answers "the request is different."** Tests run a different program — layer swap. A user switching LLM providers mid-session is changing a preference — that must *not* be a layer, or you're rebuilding the runtime to honor a dropdown.
 
 [efferent](https://github.com/xandreeddev/agent)'s `LanguageModel` is therefore one layer whose implementation routes per call:
 
@@ -227,7 +229,16 @@ The `Scoped` suffix is the interlude's idea opened around a stream: the provider
 
 ## Act II — the E channel: failures are data
 
-Effect's second channel makes failure modes part of a function's interface. `Data.TaggedError` declares an error as a class with a `_tag`; the `E` channel accumulates as a union (`ConversationStoreError | ConversationNotFound` in the first snippet), and `catchTag` handles exactly one variant, with the compiler narrowing what remains.
+Effect's second channel makes failure modes part of a function's interface. `Data.TaggedError` declares an error as a class with a `_tag`; the `E` channel accumulates as a union — you saw `ConversationStoreError | ConversationNotFound` on `append` back in Act I. Handling one variant is `catchTag`, and the type system does the bookkeeping:
+
+```ts
+yield* store.append(id, msg).pipe(
+  Effect.catchTag('ConversationNotFound', (e) => freshConversation(e.id, msg)),
+)
+// E narrows: ConversationNotFound is handled, ConversationStoreError remains
+```
+
+No `instanceof` ladders, no error-code constants, no guessing what a catch block might receive — the compiler knows exactly which failures are still possible after each handler.
 
 In an agent, the error channel has an unusual second consumer: not just humans, but *the model*. [efferent](https://github.com/xandreeddev/agent)'s tools all declare `failureMode: 'return'` — a handler failure becomes a tool **result** the model reads and reacts to, not an exception that kills the turn. The interesting case is failures the tool handler never sees, because the model's arguments didn't even decode:
 
@@ -329,11 +340,13 @@ export const withFolderLock =
     Effect.flatMap(lockFor(locks, folder), (sem) => sem.withPermits(1)(effect))
 ```
 
-`Ref.modify` makes the get-or-create atomic without a mutex around the map. And the file's doc comment owns an honest limitation: ancestor/descendant overlap (a spawn into `pkg/` racing one into `pkg/sub/`) is *deliberately* not locked, because detecting it means holding multiple locks — buying a deadlock risk for a case the prompt already steers away from. Concurrency design is tradeoffs; the primitives just make them small enough to see.
+`Ref.modify` makes the get-or-create atomic without a mutex around the map (the `unsafe` in `unsafeMakeSemaphore` only means it constructs outside an Effect — creation is pure, which is exactly what lets it run inside `Ref.modify`). `withPermits(1)` brackets the effect it wraps — acquire the permit, run, release — and the release holds on failure and interruption too, the same guarantee the interlude's `acquireUseRelease` made. And the file's doc comment owns an honest limitation: ancestor/descendant overlap (a spawn into `pkg/` racing one into `pkg/sub/`) is *deliberately* not locked, because detecting it means holding multiple locks — buying a deadlock risk for a case the prompt already steers away from. Concurrency design is tradeoffs; the primitives just make them small enough to see.
 
 ### Ref: shared state that admits it's shared
 
-A `Ref` is an atomic mutable cell. [efferent](https://github.com/xandreeddev/agent) uses one as a spend gate: every sub-agent spawned within a turn drains a single shared token pool —
+A `Ref` is a mutable cell whose every operation is atomic, and the problem it solves is the oldest one in concurrency. With a plain variable, `pool = pool - cost` is a read and a write with a gap between them; two fibers in that gap lose an update, the bill comes out wrong, and nothing crashes to tell you. `Ref.update(pool, (n) => n - cost)` is one indivisible step — a thousand concurrent drains serialize correctly, no lock, no luck. Just as important: reads and writes are effects, so shared mutable state stops being ambient. It's declared, passed as a value, and visible in every signature that touches it.
+
+[efferent](https://github.com/xandreeddev/agent) uses exactly that as a spend gate: every sub-agent spawned within a turn drains a single shared token pool —
 
 ```ts title="packages/core/src/usecases/tokenBudget.ts"
 /** Default pool: 1M tokens per top-level turn across all sub-agents. */
@@ -355,7 +368,21 @@ export const poolExhausted = (pool: Ref.Ref<number>): Effect.Effect<boolean> =>
 
 ### FiberRef: ambient context, inherited
 
-A `FiberRef` is fiber-local state that child fibers inherit. [efferent](https://github.com/xandreeddev/agent) threads each agent's identity through one — which is what lets a tool handler built once at the composition root know, at call time, *which* agent in *which* subtree is invoking it:
+If `Ref` is state shared by everyone, a `FiberRef` is state scoped to a fiber *tree*: every fiber sees its own value, and a forked child starts with a copy of its parent's. If you know `AsyncLocalStorage` from Node, this is that idea — typed, and aligned with the fiber tree instead of the callback chain. Its companion is `Effect.locally`, the piece that makes it usable: it runs one effect with the ref overridden, and the override is visible *only* inside that effect and the fibers it forks —
+
+```ts
+const child = runChildAgent(task).pipe(
+  Effect.locally(RunContextRef, {
+    ...parent,
+    parentNodeId: node.id,
+    depth: parent.depth + 1,
+  }),
+)
+// inside `child` and anything it forks: the child's context
+// the parent's own fiber: untouched — no save-and-restore code
+```
+
+No global to mutate and carefully reset, no context parameter threaded through forty signatures. [efferent](https://github.com/xandreeddev/agent) carries each agent's identity this way — which is what lets a tool handler built once at the composition root know, at call time, *which* agent in *which* subtree is invoking it:
 
 ```ts title="packages/core/src/usecases/runContext.ts"
 export interface RunContext {
@@ -369,7 +396,7 @@ export const RunContextRef: FiberRef.FiberRef<RunContext> =
   FiberRef.unsafeMake<RunContext>(initialRunContext)
 ```
 
-Each spawn re-seeds the ref with `Effect.locally` — parent node, depth + 1 — for exactly the scope of the child's run. The highlighted field is my favorite composition in the codebase: the token pool `Ref` rides *inside* the `FiberRef`. Re-seeding copies the reference, so it's the *same* cell at every depth — a grandchild's spend is instantly visible to the root's gate. Ambient identity plus global accounting, two primitives nested, zero parameters threaded.
+The highlighted field is my favorite composition in the codebase: the token pool `Ref` rides *inside* the `FiberRef`. `Effect.locally` copies the *reference*, so it's the same cell at every depth — a grandchild's spend is instantly visible to the root's gate. Per-agent identity and global accounting, two primitives nested, zero parameters threaded.
 
 ### Effect.async + Deferred: parking a fiber on a human
 
@@ -385,7 +412,7 @@ const ask = (req: ApprovalRequest) =>
   })
 ```
 
-`Effect.async` adapts callback-world into a fiber: the agent suspends until the overlay's key handler calls `resume`. The highlighted return value is the detail that pays rent — an optional cleanup effect that runs *if the fiber is interrupted while parked*. Esc kills the turn; the modal closes; nothing dangles. A one-permit semaphore in front serializes concurrent requests (parallel sub-agents can want bash at once), and each waiter re-checks the rule ledgers when its turn comes — so one "allow for session" answers the whole queue behind it. The TUI's exit works the same way in miniature: a `Deferred` — a one-shot, fiber-safe promise — that the quit handler completes and the main fiber awaits.
+`Effect.async` adapts callback-world into a fiber: the agent suspends until the overlay's key handler calls `resume`. The highlighted return value is the detail that pays rent — an optional cleanup effect that runs *if the fiber is interrupted while parked*. Esc kills the turn; the modal closes; nothing dangles. A one-permit semaphore in front serializes concurrent requests (parallel sub-agents can want bash at once), and each waiter re-checks the rule ledgers when its turn comes — so one "allow for session" answers the whole queue behind it. The TUI's exit works the same way in miniature, via a `Deferred`: a one-shot cell that starts empty, can be completed exactly once, and parks any fiber that awaits it until that moment. The quit handler completes it, the main fiber awaits it, and that single value *is* the shutdown protocol — no flags, no polling.
 
 ### The unifying semantics: interruption
 
@@ -419,7 +446,7 @@ export const ReadFile = Tool.make('read_file', {
 
 ## What it costs
 
-Stack traces are fiber traces; debugging takes recalibration. The vocabulary is genuinely large — this post used fifteen-odd exports and barely touched `Schedule` or `Stream`. And the type errors when a layer graph is missing a dependency are accurate but not kind.
+Stack traces are fiber traces; debugging takes recalibration. The vocabulary is genuinely large — this post used two dozen exports and barely touched `Schedule` or `Stream`. And the type errors when a layer graph is missing a dependency are accurate but not kind.
 
 Against that: every mechanism in Act III is something this program needed anyway. The alternative wasn't simplicity — it was hand-rolled semaphores around a `Map`, an `AbortController` forest, and cleanup paths I'd have gotten wrong in the cases that matter (the interrupt *during* the approval modal, the failure *during* client setup). In Effect, each one is a few dozen commented lines that interrupt correctly because they can't not. A steep vocabulary, for a system where the hard parts are ordinary values.
 
