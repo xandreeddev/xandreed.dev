@@ -1362,10 +1362,12 @@ export function mount() {
   const maxRun = () => (powerOn('boost') ? 16 : 13);
   const jumpV = () => (powerOn('boost') ? 18 : 15.5);
 
-  /* highest support under the player's feet */
-  function findGround() {
+  /* highest support under the player's feet. refY must be the PRE-step y:
+     filtering by the post-step y lets a fast fall skip past a floor in one
+     frame and tunnel through the map */
+  function findGround(refY = player.position.y) {
     const px = player.position.x;
-    const py = player.position.y;
+    const py = refY;
     const pz = player.position.z;
     let best = -Infinity;
     let bestBox = null;
@@ -1475,6 +1477,7 @@ export function mount() {
     gliding = keys.jump && !onGround && vel.y < 0 && powerOn('glide');
     vel.y -= (gliding ? 14 : 42) * dt;
     if (gliding) vel.y = Math.max(vel.y, -3.2);
+    vel.y = Math.max(vel.y, -34); // terminal velocity keeps step sizes sane
 
     /* --- integrate + collide --- */
     player.position.x += vel.x * dt;
@@ -1507,8 +1510,8 @@ export function mount() {
     }
 
     const prevY = player.position.y;
+    const g = findGround(prevY); // sweep from where the fall STARTED
     player.position.y += vel.y * dt;
-    const g = findGround();
     if (vel.y <= 0 && g.top > -Infinity && prevY >= g.top - 0.05 && player.position.y <= g.top) {
       player.position.y = g.top;
       if (!onGround) {
