@@ -3300,9 +3300,9 @@ export function mount() {
          centimeter bind scale (~0.01) — a child of a bone inherits it, so
          counter the hand's WORLD scale or the axe shrinks to a speck */
       toonify(assets.axe, toneRamp);
-      const AXE_LEN = 1.7;
+      const AXE_LEN = 1.45;
       normalizeHeight(assets.axe, AXE_LEN);
-      assets.axe.position.set(0, -0.32, 0); // grip the upper shaft (axe origin = bbox center)
+      assets.axe.position.set(0, -0.5, 0); // grip low on the shaft (axe origin = bbox center)
       const hand = assets.hero.scene.getObjectByName('RightHand');
       if (hand) {
         assets.hero.scene.updateWorldMatrix(true, true);
@@ -3310,9 +3310,11 @@ export function mount() {
         hand.getWorldScale(handScale);
         const wrap = new THREE.Group();
         wrap.scale.set(1 / handScale.x, 1 / handScale.y, 1 / handScale.z);
-        /* shaft along the fist's Z — the blade arcs with the swing plane */
-        wrap.rotation.set(0, 0, Math.PI / 2);
-        wrap.position.set(0, 0.04, 0.02);
+        /* shaft along the fist's Z, twisted back so the blade rests past
+           the shoulder in the combat stance instead of through the torso —
+           swings still arc it out front */
+        wrap.rotation.set(-0.45, 0, Math.PI / 2);
+        wrap.position.set(0, 0.07, 0.05);
         wrap.add(assets.axe);
         hand.add(wrap);
         /* grip tuning + scene probing hook for headless QA — inert unless

@@ -33,6 +33,7 @@
     "@fontsource/vt323": "^5.2.7",
     "@shikijs/transformers": "^3.4.0",
     "astro": "^5.8.0",
+    "cannon-es": "^0.20.0",
     "rehype-autolink-headings": "^7.1.0",
     "three": "^0.184.0"
   },

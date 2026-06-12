@@ -157,12 +157,21 @@ Rules that keep it healthy:
   merged-blob tree canopies (`mergeGeometries`), ~700 instanced grass tufts — when
   filling an InstancedMesh, never skip a slot: an unset instance renders at the
   origin (mid-lake). All textures stay canvas-procedural.
-- Knockables (pin clusters + the box-built XANDREED letters) share one toy-physics
-  pool: they are NOT in `colliders` — the car drives through and applies an impulse;
-  rest height follows orientation via `|localY·up|` so props settle standing or
-  lying without a solver. Letter strokes: `rotation.z` is CCW from the front, and
-  screen-right from the road is *decreasing* ring angle — both signs flip glyphs or
-  the whole word into mirror writing.
+- Physics is cannon-es (~165 KB, in the lazy sodium chunk): the car is a
+  `RaycastVehicle` (AWD, per-wheel force under the traction cap or it all
+  vaporizes as wheelspin; handbrake = rear `frictionSlip` drop), knockables
+  (pins, cones, the XANDREED letters) are real rigid bodies that sleep when
+  settled, ramps and `colliders` are static boxes/cylinders. Hard-earned
+  cannon rules: the GROUND IS A BIG BOX, never `CANNON.Plane` (its ray path
+  misses the wheel raycasts at some coordinates and the car falls through);
+  `updateAABB()` every static body AFTER posing it (statics never refresh,
+  and a stale AABB makes rays AND contacts pass through); `copy()` into
+  `body.quaternion`, don't reassign it; the chassis gets `allowSleep =
+  false` (a sleeping chassis ignores the engine and its own suspension).
+  `carA`/`vel` are now derived FROM the chassis each frame, not inputs.
+  Letter strokes: `rotation.z` is CCW from the front, and screen-right from
+  the road is *decreasing* ring angle — both signs flip glyphs or the whole
+  word into mirror writing.
 - The lake uses `three/addons` `Water` with a procedurally generated normal map —
   no texture assets anywhere; billboard faces and HUD textures are canvas-drawn
   (redrawn after `document.fonts.load`, Michroma/Outfit).
@@ -191,8 +200,8 @@ Rules that keep it healthy:
   recompiles every program. Mass props (cones) render as one InstancedMesh and
   are promoted to physics meshes on contact; ~250 individual prop groups cost
   the iGPU two thirds of its frame rate.
-- Stunt ramps drive real y-physics (`vy`/`airborne` in the frame loop) — the
-  car's y is sampled from ramp surfaces, never hard-set to 0.
+- Stunt ramps are pitched static boxes flush with the visual wedges — the
+  launch is real ballistics now; airtime reads from `numWheelsOnGround`.
 - AO strategy: canopy runs GTAO on every device (fewer samples on coarse),
   behind a persisted HUD toggle (`canopy-fx`, default on — flips
   `gtaoPass.enabled` live, no rebuild);

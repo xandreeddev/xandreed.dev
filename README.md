@@ -141,10 +141,12 @@ discovered`, persisted.
 - Real-time moonlight shadows (PCFSoft) that follow the car, planar-reflective
   water with procedurally generated wave normals, wind turbines turning over
   the lake, drifting clouds, fireflies, sky-matched reflections on the paint.
-- Arcade-honest car physics: lateral grip you can break with the handbrake
-  (`space`), suspension lean, speed-dependent steering, FOV that widens with
-  speed. `W` gas, `S` brake/reverse, `A/D` steer. Touch: stick steers, gas
-  latches, brake/drift hold.
+- Real 3D physics (cannon-es): the jeep is a raycast vehicle with true
+  suspension, body roll and ballistic ramp launches; the handbrake breaks
+  rear grip for slides (`space`), steering softens with speed, FOV widens
+  with it. Pins, cones and the letters are rigid bodies that genuinely
+  tumble. `W` gas, `S` brake/reverse, `A/D` steer. Touch: stick steers, gas
+  latches, brake/drift hold — Apple Pencil steers too.
 - Engine and tyre-skid audio synthesized in WebAudio — zero assets, `M` mutes.
 - Drive into the lake and you get fished out. The car position survives
   article round-trips. Same lazy-chunk rule: only sodium pays for it.

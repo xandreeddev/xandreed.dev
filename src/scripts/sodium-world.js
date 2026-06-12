@@ -21,6 +21,7 @@
 --------------------------------------------------------------------------- */
 
 import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -829,10 +830,33 @@ export function mount() {
   scene.add(moon, moon.target);
   const MOON_OFF = new THREE.Vector3(110, 150, -130);
 
-  /* static obstacles the car can hit: { x, z, r } */
+  /* static obstacles the car can hit: { x, z, r } — rendered as baked
+     contact-shadow blots AND turned into static physics bodies later */
   const colliders = [];
   /* every streetlight's point light — only the nearest two stay live */
   const lampLights = [];
+
+  /* ----- physics: a real cannon-es world. The car is a RaycastVehicle,
+     the knockables are true rigid bodies — full 3D, not the old planar
+     velocity-plus-y-hacks model ----- */
+  const phys = new CANNON.World({ gravity: new CANNON.Vec3(0, -22, 0) });
+  /* naive broadphase on purpose: SAP's aabbQuery serves the vehicle's wheel
+     raycasts stale axis lists after a teleport (lake rescue, page restore)
+     and the wheels never find the ground again. ~120 bodies is nothing. */
+  phys.allowSleep = true;
+  phys.defaultContactMaterial.friction = 0.25;
+  phys.defaultContactMaterial.restitution = 0.12;
+  {
+    /* a huge box, not CANNON.Plane: the plane's ray/AABB path misses the
+       vehicle's wheel raycasts at some coordinates — a box never does */
+    const ground = new CANNON.Body({
+      type: CANNON.Body.STATIC,
+      shape: new CANNON.Box(new CANNON.Vec3(1300, 1, 1300)),
+    });
+    ground.position.set(0, -1, 0);
+    phys.addBody(ground);
+    ground.updateAABB();
+  }
 
   /* ----- ground: vertex-noise plain ----- */
 
@@ -1670,10 +1694,57 @@ export function mount() {
   const car = makeCar();
   scene.add(car);
 
-  /* ----- car state + restore ----- */
+  /* ----- the physics car: chassis body + RaycastVehicle ----- */
 
-  let carA = 0; // heading
-  const vel = new THREE.Vector3();
+  /* visual origin is at ground level; the chassis body's center floats at
+     wheel radius + suspension — VIS_OFF maps body space to mesh space */
+  const VIS_OFF = 0.86;
+  const chassisBody = new CANNON.Body({
+    mass: 150,
+    shape: new CANNON.Box(new CANNON.Vec3(1.05, 0.45, 2.0)),
+    angularDamping: 0.25,
+  });
+  chassisBody.allowSleep = false; // a sleeping chassis ignores the engine AND its own suspension
+  const vehicle = new CANNON.RaycastVehicle({
+    chassisBody,
+    indexRightAxis: 0,
+    indexUpAxis: 1,
+    indexForwardAxis: 2,
+  });
+  const WHEEL_OPTS = {
+    radius: 0.52,
+    directionLocal: new CANNON.Vec3(0, -1, 0),
+    axleLocal: new CANNON.Vec3(1, 0, 0),
+    suspensionStiffness: 38,
+    suspensionRestLength: 0.42,
+    maxSuspensionTravel: 0.38,
+    maxSuspensionForce: 1e5,
+    dampingRelaxation: 2.4,
+    dampingCompression: 4.4,
+    frictionSlip: 2.1,
+    rollInfluence: 0.04,
+    customSlidingRotationalSpeed: -30,
+    useCustomSlidingRotationalSpeed: true,
+  };
+  /* FL, FR, RL, RR — steering drives 0/1, the engine drives 2/3 */
+  for (const [sx, sz] of [
+    [-1.05, 1.32],
+    [1.05, 1.32],
+    [-1.05, -1.32],
+    [1.05, -1.32],
+  ])
+    vehicle.addWheel({ ...WHEEL_OPTS, chassisConnectionPointLocal: new CANNON.Vec3(sx, 0.05, sz) });
+  vehicle.addToWorld(phys);
+
+  /* QA hook for headless physics tests — inert unless the flag is set */
+  const debugHook = (extra) => {
+    try {
+      if (localStorage.getItem('sodium-debug')) window.__sd = { chassisBody, vehicle, phys, CANNON, ...extra };
+    } catch {}
+  };
+
+  let carA = 0; // heading, derived from the chassis each frame
+  const vel = new THREE.Vector3(); // chassis velocity, mirrored each frame
   let steer = 0;
   let foundCount = posts.filter((p) => p.slug && found.has(p.slug)).length;
   const keys = { gas: false, brake: false, drift: false };
@@ -1681,14 +1752,25 @@ export function mount() {
   const roadPoint = (a) => new THREE.Vector3(Math.cos(a) * ROAD_R, 0, Math.sin(a) * ROAD_R);
   const bbAngle = (i, slug) => (i / posts.length) * Math.PI * 2 + hash01(slug ?? String(i)) * 0.3;
 
+  const placeCar = (x, z, yaw, y = VIS_OFF + 0.25) => {
+    chassisBody.wakeUp();
+    chassisBody.position.set(x, y, z);
+    chassisBody.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), yaw);
+    chassisBody.velocity.set(0, 0, 0);
+    chassisBody.angularVelocity.set(0, 0, 0);
+    carA = yaw;
+  };
+
   {
     let placed = false;
     const saved = store.carState();
     if (saved && Array.isArray(saved.p) && Date.now() - (saved.t ?? 0) < 45 * 60 * 1000) {
       try {
-        car.position.fromArray(saved.p);
+        chassisBody.position.set(saved.p[0], Math.max(saved.p[1] + VIS_OFF, VIS_OFF + 0.2), saved.p[2]);
+        if (Array.isArray(saved.q)) chassisBody.quaternion.set(...saved.q);
+        else chassisBody.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), saved.a ?? 0);
+        chassisBody.velocity.set(...(saved.v ?? [0, 0, 0]));
         carA = saved.a ?? 0;
-        vel.fromArray(saved.v ?? [0, 0, 0]);
         placed = true;
       } catch {}
     }
@@ -1699,9 +1781,11 @@ export function mount() {
       } catch {}
       const i = posts.findIndex((p) => p.slug && p.slug === atSlug);
       const a = i >= 0 ? bbAngle(i, posts[i].slug) : bbAngle(0, posts[0]?.slug) - 0.25;
-      car.position.copy(roadPoint(a));
-      carA = a + Math.PI / 2; // facing along the road, counter-clockwise
+      const sp = roadPoint(a);
+      placeCar(sp.x, sp.z, a + Math.PI / 2); // facing along the road, counter-clockwise
     }
+    car.position.copy(chassisBody.position);
+    car.position.y -= VIS_OFF;
   }
 
   /* ----- knockables: pin clusters + the name in letters, toy physics ----- */
@@ -1714,25 +1798,20 @@ export function mount() {
   let coneMatShared = null;
   let pinsDown = 0;
   let pinsTotal = 0;
-  const propQ = new THREE.Quaternion();
   const propV = new THREE.Vector3();
   const coneM4 = new THREE.Matrix4();
 
-  /* shared impulse: pins, cones and letters all take the hit the same way */
+  /* shared launch: pins, cones and letters take the hit through their real
+     rigid bodies now — the impulse seeds the comedy, cannon does the rest */
   function knockProp(p, dx, dz) {
-    p.flying = true;
-    const inv = 1 / p.mass;
+    p.body.wakeUp();
     const d = Math.max(0.001, Math.hypot(dx, dz));
     const sp = vel.length();
-    p.vel.set(
-      (vel.x * 0.7 + (dx / d) * 4) * inv,
-      (2.4 + sp * 0.11) * inv,
-      (vel.z * 0.7 + (dz / d) * 4) * inv,
-    );
-    p.angVel.set(
-      (Math.random() - 0.5) * 10 * inv,
-      (Math.random() - 0.5) * 10 * inv,
-      (Math.random() - 0.5) * 10 * inv,
+    p.body.velocity.set(vel.x * 0.8 + (dx / d) * 4, 2.2 + sp * 0.12, vel.z * 0.8 + (dz / d) * 4);
+    p.body.angularVelocity.set(
+      (Math.random() - 0.5) * 8,
+      (Math.random() - 0.5) * 8,
+      (Math.random() - 0.5) * 8,
     );
     if (p.isPin) {
       if (!p.down) {
@@ -1747,26 +1826,33 @@ export function mount() {
     } else {
       audio.thud();
       shake = Math.min(1, shake + 0.2);
-      vel.multiplyScalar(0.9);
     }
   }
 
-  /* outside the builder block — the cone-instance promoter needs it too */
+  /* outside the builder block — the cone-instance promoter needs it too.
+     opts.half = the body box half-extents [hx, hy, hz] */
   const addProp = (g, opts) => {
     g.position.y = opts.restStand;
     scene.add(g);
+    const body = new CANNON.Body({
+      mass: opts.mass,
+      shape: new CANNON.Box(new CANNON.Vec3(...opts.half)),
+      position: new CANNON.Vec3(g.position.x, g.position.y, g.position.z),
+      linearDamping: 0.15,
+      angularDamping: 0.35,
+      sleepSpeedLimit: 0.55,
+      sleepTimeLimit: 0.4,
+    });
+    body.quaternion.copy(g.quaternion);
+    body.sleep(); // settled until something real touches it
+    phys.addBody(body);
     props.push({
       g,
+      body,
       r: opts.r,
-      mass: opts.mass,
-      restStand: opts.restStand,
-      restLie: opts.restLie,
       isPin: !!opts.isPin,
       isCone: !!opts.isCone,
       down: false,
-      flying: false,
-      vel: new THREE.Vector3(),
-      angVel: new THREE.Vector3(),
     });
   };
 
@@ -1805,7 +1891,7 @@ export function mount() {
           const ox = (col - row / 2) * 0.62;
           const oz = row * 0.58;
           g.position.set(cx + ox, 0, cz + oz);
-          addProp(g, { r: 0.5, mass: 1, restStand: 0.55, restLie: 0.23, isPin: true });
+          addProp(g, { r: 0.5, mass: 1, restStand: 0.55, half: [0.21, 0.55, 0.21], isPin: true });
           k++;
         }
       pinsTotal += k;
@@ -1849,7 +1935,7 @@ export function mount() {
       const a = aMid - (i - (word.length - 1) / 2) * dA;
       g.position.set(Math.cos(a) * rL, 0, Math.sin(a) * rL);
       g.lookAt(Math.cos(a) * ROAD_R, 0, Math.sin(a) * ROAD_R);
-      addProp(g, { r: 0.8, mass: 2.6, restStand: H / 2, restLie: 0.32 });
+      addProp(g, { r: 0.8, mass: 2.6, restStand: H / 2, half: [0.55, H / 2, 0.18] });
     });
 
     /* stunt strips: every doc exit gets a seeded jump ramp + cone slalom
@@ -1923,6 +2009,31 @@ export function mount() {
         h: hgt,
         w: 4.2,
       });
+      /* the physics ramp: a static box pitched to match the wedge's slope,
+         its top face flush with the visual surface. The vertical drop at
+         the far end stays open — that's the launch */
+      {
+        const slope = Math.atan2(hgt, len);
+        const slopeLen = Math.hypot(len, hgt);
+        const body = new CANNON.Body({
+          type: CANNON.Body.STATIC,
+          shape: new CANNON.Box(new CANNON.Vec3(2.1, 0.25, slopeLen / 2)),
+        });
+        const qy = new CANNON.Quaternion().setFromAxisAngle(
+          new CANNON.Vec3(0, 1, 0),
+          Math.atan2(tanV.x, tanV.z),
+        );
+        const qp = new CANNON.Quaternion().setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -slope);
+        body.quaternion.copy(qy.mult(qp));
+        const n = body.quaternion.vmult(new CANNON.Vec3(0, 1, 0));
+        body.position.set(
+          ramp.position.x + tanV.x * (len / 2) - n.x * 0.25,
+          hgt / 2 - n.y * 0.25,
+          ramp.position.z + tanV.z * (len / 2) - n.z * 0.25,
+        );
+        phys.addBody(body);
+        body.updateAABB(); // statics never refresh it — set AFTER posing, or rays pass through
+      }
       /* cone slalom on the approach — instances, not objects */
       const nCones = 4 + Math.floor(rnd() * 3);
       for (let k = 0; k < nCones; k++) {
@@ -2153,10 +2264,30 @@ export function mount() {
   }
 
   function saveCar() {
-    store.carState({ p: car.position.toArray(), a: carA, v: vel.toArray(), t: Date.now() });
+    store.carState({
+      p: car.position.toArray(),
+      a: carA,
+      q: chassisBody.quaternion.toArray(),
+      v: chassisBody.velocity.toArray(),
+      t: Date.now(),
+    });
   }
 
   /* ----- physics + game loop ----- */
+
+  /* every {x, z, r} obstacle becomes a static cylinder in the cannon world
+     (poles, trees, turbine towers, billboard legs) */
+  for (const cb of colliders) {
+    const b = new CANNON.Body({
+      type: CANNON.Body.STATIC,
+      shape: new CANNON.Cylinder(cb.r, cb.r, 8, 8),
+    });
+    b.position.set(cb.x, 4, cb.z);
+    phys.addBody(b);
+    b.updateAABB(); // statics never refresh it after posing
+  }
+
+  debugHook({ placeCar, props, ramps });
 
   const VMAX = 46;
   const tmpV = new THREE.Vector3();
@@ -2166,20 +2297,19 @@ export function mount() {
   let shake = 0;
   let hudTimer = 0;
   /* vertical: ramps launch the car, gravity brings it back */
-  let vy = 0;
   let airborne = false;
   let airT = 0;
   let squash = 0;
   let lampCullT = 9; // force an immediate first cull pass
+  let crashCd = 0; // collision thud debounce
+  let prevVy = 0;
 
   const fwdOf = (a, out) => out.set(Math.sin(a), 0, Math.cos(a));
 
   function resetToRoad() {
     const a = Math.atan2(car.position.z, car.position.x);
-    car.position.copy(roadPoint(a));
-    carA = a + Math.PI / 2;
-    vel.set(0, 0, 0);
-    vy = 0;
+    const sp = roadPoint(a);
+    placeCar(sp.x, sp.z, a + Math.PI / 2);
     airborne = false;
     audio.splash();
     hud?.toast('fished out — back on the road');
@@ -2190,129 +2320,106 @@ export function mount() {
     const dt = Math.min(clock.getDelta(), 0.05);
     const time = clock.elapsedTime;
 
-    /* --- driving --- */
+    /* --- driving: feed the RaycastVehicle, then let cannon integrate --- */
     const steerTarget = stick.id >= 0 ? -stick.x : (keys.left ? 1 : 0) + (keys.right ? -1 : 0);
     steer = THREE.MathUtils.lerp(steer, THREE.MathUtils.clamp(steerTarget, -1, 1), 1 - Math.exp(-dt * 8));
 
-    const fwd = fwdOf(carA, tmpV);
+    vel.set(chassisBody.velocity.x, chassisBody.velocity.y, chassisBody.velocity.z);
+    car.quaternion.set(
+      chassisBody.quaternion.x,
+      chassisBody.quaternion.y,
+      chassisBody.quaternion.z,
+      chassisBody.quaternion.w,
+    );
+    const fwd = tmpV.set(0, 0, 1).applyQuaternion(car.quaternion);
+    carA = Math.atan2(fwd.x, fwd.z);
     const speedAlong = vel.dot(fwd);
     const speed = vel.length();
 
-    /* engine / brake / reverse — wheels need the ground */
-    if (keys.gas && !airborne) vel.addScaledVector(fwd, 26 * dt);
-    if (keys.brake && !airborne) {
-      if (speedAlong > 1) vel.multiplyScalar(Math.exp(-dt * 2.6));
-      else vel.addScaledVector(fwd, -11 * dt); // reverse
-    }
-    /* drag (quadratic-ish) + rolling resistance */
-    vel.multiplyScalar(Math.exp(-dt * (0.18 + speed * 0.004)));
+    /* steering: full lock at parking speed, gentle at pace */
+    const steerVal = (steer * 0.62) / (1 + speed * 0.012);
+    vehicle.setSteeringValue(steerVal, 0);
+    vehicle.setSteeringValue(steerVal, 1);
+
+    /* engine / brake / reverse — AWD: per-wheel force stays under the
+       traction cap, so the punch arrives instead of vaporizing as spin */
+    const F = 950;
+    let engine = 0;
+    if (keys.gas) engine = -F;
+    else if (keys.brake && speedAlong <= 1) engine = F * 0.55; // reverse
+    for (let i = 0; i < 4; i++) vehicle.applyEngineForce(engine, i);
+    const braking = keys.brake && speedAlong > 1 ? 16 : keys.gas ? 0 : 1.2; // light engine braking
+    for (let i = 0; i < 4; i++) vehicle.setBrake(braking, i);
+
+    /* handbrake: the rear tires let go and the car rotates into a slide */
+    const rearSlip = keys.drift ? 0.55 : WHEEL_OPTS.frictionSlip;
+    vehicle.wheelInfos[2].frictionSlip = rearSlip;
+    vehicle.wheelInfos[3].frictionSlip = rearSlip;
 
     /* offroad: heavy grass drag */
-    const radial = Math.hypot(car.position.x, car.position.z);
+    const radial = Math.hypot(chassisBody.position.x, chassisBody.position.z);
     const offroad = Math.abs(radial - ROAD_R) > ROAD_W + 1.2;
-    if (offroad && !airborne) vel.multiplyScalar(Math.exp(-dt * 0.9));
-
-    /* steering: stronger at speed, reversed in reverse */
-    const dir = speedAlong >= 0 ? 1 : -1;
-    const airK = airborne ? 0.12 : 1; // barely any authority mid-air
-    const grip = (keys.drift ? 2.0 : 9.0) * airK;
-    carA +=
-      steer *
-      dir *
-      (keys.drift ? 3.4 : 2.5) *
-      airK *
-      dt *
-      THREE.MathUtils.clamp(speed / 9, 0, 1) *
-      (1 / (1 + speed * 0.012));
-
-    /* lateral grip: break it with the handbrake and the car slides */
-    fwdOf(carA, fwd);
-    const right = tmpV2.set(fwd.z, 0, -fwd.x);
-    const latV = vel.dot(right);
-    vel.addScaledVector(right, latV * (Math.exp(-dt * grip) - 1));
-    const drifting = Math.abs(latV) > 6 && speed > 10 && !airborne;
-
-    if (speed > VMAX) vel.setLength(VMAX);
-    car.position.addScaledVector(vel, dt);
-    car.rotation.y = carA;
-
-    /* --- vertical: ramps, launches, landings --- */
-    let groundY = 0;
-    for (const rp of ramps) {
-      const dx = car.position.x - rp.x;
-      const dz = car.position.z - rp.z;
-      if (dx * dx + dz * dz > rp.len * rp.len + 30) continue;
-      const s = dx * rp.fx + dz * rp.fz;
-      const l = dx * rp.rx + dz * rp.rz;
-      if (s > -0.4 && s < rp.len && Math.abs(l) < rp.w / 2) {
-        const sy = Math.max(0, (s / rp.len) * rp.h);
-        if (sy - car.position.y > 1.0 && !airborne) {
-          /* came at the tall face — it's a wall, not a launch */
-          vel.multiplyScalar(0.45);
-          car.position.x -= rp.fx * 0.6;
-          car.position.z -= rp.fz * 0.6;
-          audio.thud();
-        } else groundY = Math.max(groundY, sy);
-      }
-    }
-    if (airborne) {
-      vy -= 26 * dt;
-      car.position.y += vy * dt;
-      airT += dt;
-      if (car.position.y <= groundY) {
-        car.position.y = groundY;
-        airborne = false;
-        squash = Math.min(1, Math.max(0.3, -vy * 0.07));
-        if (vy < -7) {
-          audio.thud();
-          shake = Math.min(1, shake + 0.3);
-        }
-        vy = 0;
-        if (airT > 0.5)
-          hud?.toast(`air ${airT.toFixed(1)}s${airT > 1.1 ? ' — send it!' : ''}`, airT > 1.1 ? 'ok' : '');
-      }
-    } else {
-      const rise = groundY - car.position.y;
-      if (rise >= -0.02) {
-        /* grounded — follow the surface and remember the climb rate */
-        if (rise > 0) vy = rise / dt;
-        else vy = Math.max(0, vy * 0.6);
-        car.position.y = groundY;
-      } else {
-        /* the ground fell away: launched with whatever climb we carried */
-        airborne = true;
-        airT = 0;
-      }
+    if (offroad && !airborne) {
+      const k = Math.exp(-dt * 0.9);
+      chassisBody.velocity.x *= k;
+      chassisBody.velocity.z *= k;
     }
 
-    /* lake: splash + reset */
+    /* top speed + soft world edge */
+    if (speed > VMAX) chassisBody.velocity.scale(VMAX / speed, chassisBody.velocity);
+    if (radial > 560) {
+      tmpV2.copy(car.position).setY(0).normalize();
+      chassisBody.velocity.x -= tmpV2.x * dt * 30;
+      chassisBody.velocity.z -= tmpV2.z * dt * 30;
+    }
+
+    prevVy = chassisBody.velocity.y;
+    phys.step(1 / 60, dt, 4);
+
+    /* sync the visual car: the mesh origin sits at ground level, the body
+       center floats at suspension height — offset along the body's up */
+    car.quaternion.set(
+      chassisBody.quaternion.x,
+      chassisBody.quaternion.y,
+      chassisBody.quaternion.z,
+      chassisBody.quaternion.w,
+    );
+    car.position.set(chassisBody.position.x, chassisBody.position.y, chassisBody.position.z);
+    tmpV2.set(0, -VIS_OFF, 0).applyQuaternion(car.quaternion);
+    car.position.add(tmpV2);
+    vel.set(chassisBody.velocity.x, chassisBody.velocity.y, chassisBody.velocity.z);
+
+    /* airtime: wheels report contact; landings thud and squash */
+    const wasAirborne = airborne;
+    airborne = vehicle.numWheelsOnGround === 0;
+    if (airborne) airT += dt;
+    else if (wasAirborne) {
+      const impact = Math.max(0, -prevVy);
+      squash = Math.min(1, Math.max(0.25, impact * 0.07));
+      if (impact > 7) {
+        audio.thud();
+        shake = Math.min(1, shake + 0.3);
+      }
+      if (airT > 0.5)
+        hud?.toast(`air ${airT.toFixed(1)}s${airT > 1.1 ? ' — send it!' : ''}`, airT > 1.1 ? 'ok' : '');
+      airT = 0;
+    }
+
+    /* crash feedback: a hard stop against a static means we hit something */
+    crashCd = Math.max(0, crashCd - dt);
+    const lost = speed - vel.length();
+    if (lost > 6 && crashCd <= 0 && !airborne) {
+      crashCd = 0.5;
+      audio.thud();
+      shake = Math.min(1, shake + 0.5);
+    }
+
+    /* lake: splash + reset; flipped onto the roof: same rescue */
     if (radial < LAKE_R - 2) resetToRoad();
-    /* soft world edge */
-    if (radial > 560) vel.addScaledVector(tmpV2.copy(car.position).setY(0).normalize(), -dt * 30);
-
-    /* collisions: poles, trees, turbine towers */
-    for (const cBox of colliders) {
-      const dx = car.position.x - cBox.x;
-      const dz = car.position.z - cBox.z;
-      const d2 = dx * dx + dz * dz;
-      const rr = cBox.r + 1.1;
-      if (d2 < rr * rr && d2 > 0.0001) {
-        const d = Math.sqrt(d2);
-        const nx = dx / d;
-        const nz = dz / d;
-        car.position.x = cBox.x + nx * rr;
-        car.position.z = cBox.z + nz * rr;
-        const vn = vel.x * nx + vel.z * nz;
-        if (vn < 0) {
-          vel.x -= nx * vn * 1.6;
-          vel.z -= nz * vn * 1.6;
-          vel.multiplyScalar(0.72);
-          if (speed > 6) {
-            audio.thud();
-            shake = Math.min(1, shake + 0.5);
-          }
-        }
-      }
+    else if (!airborne && tmpV2.set(0, 1, 0).applyQuaternion(car.quaternion).y < -0.45 && speed < 3) {
+      const a = Math.atan2(car.position.z, car.position.x);
+      placeCar(car.position.x, car.position.z, a + Math.PI / 2);
+      hud?.toast('back on your wheels');
     }
 
     /* resting cones are instances — promote to a live prop on contact */
@@ -2329,63 +2436,47 @@ export function mount() {
           const m = new THREE.Mesh(coneGeoShared, coneMatShared);
           m.castShadow = true;
           m.position.set(c.x, 0, c.z);
-          addProp(m, { r: 0.42, mass: 0.5, restStand: 0.36, restLie: 0.3, isCone: true });
+          addProp(m, { r: 0.42, mass: 0.5, restStand: 0.36, half: [0.3, 0.36, 0.3], isCone: true });
           knockProp(props[props.length - 1], dx, dz);
         }
       }
     }
 
-    /* knockables: drive through pins and letters, they tumble */
+    /* knockables: the launch trigger stays proximity-based (guaranteed
+       comedy), but flight, tumbling and settling are all cannon's now —
+       and a slow nudge topples them through real chassis contact too */
     for (const p of props) {
-      if (!p.flying) {
+      if (p.body.sleepState === CANNON.Body.SLEEPING) {
         const dx = p.g.position.x - car.position.x;
         const dz = p.g.position.z - car.position.z;
         const rr = p.r + 1.35;
         if (dx * dx + dz * dz < rr * rr && speed > 3 && car.position.y < 1.1) {
           knockProp(p, dx, dz);
         }
-      } else {
-        p.vel.y -= 20 * dt;
-        p.g.position.addScaledVector(p.vel, dt);
-        const w = p.angVel.length();
-        if (w > 0.02) {
-          propQ.setFromAxisAngle(propV.copy(p.angVel).normalize(), w * dt);
-          p.g.quaternion.premultiply(propQ);
-        }
-        /* rest height follows orientation: standing tall or lying flat */
+        continue;
+      }
+      p.g.position.set(p.body.position.x, p.body.position.y, p.body.position.z);
+      p.g.quaternion.set(
+        p.body.quaternion.x,
+        p.body.quaternion.y,
+        p.body.quaternion.z,
+        p.body.quaternion.w,
+      );
+      /* a pin counts as down once it tips past ~55° */
+      if (p.isPin && !p.down) {
         propV.set(0, 1, 0).applyQuaternion(p.g.quaternion);
-        const rest = THREE.MathUtils.lerp(p.restLie, p.restStand, Math.abs(propV.y));
-        if (p.g.position.y < rest) {
-          p.g.position.y = rest;
-          if (p.vel.y < 0) p.vel.y *= -0.32;
-          p.vel.x *= 0.7;
-          p.vel.z *= 0.7;
-          p.angVel.multiplyScalar(0.55);
-          if (p.vel.lengthSq() < 0.25 && p.angVel.lengthSq() < 0.3) {
-            p.flying = false;
-            p.vel.set(0, 0, 0);
-            p.angVel.set(0, 0, 0);
-          }
+        if (propV.y < 0.55) {
+          p.down = true;
+          pinsDown++;
+          if (hud?.els?.pins) hud.els.pins.textContent = `pins ${pinsDown}/${pinsTotal}`;
+          if (pinsDown === pinsTotal) hud?.toast('every pin down — strike!', 'ok');
         }
       }
     }
 
-    /* suspension feel: body roll + pitch, wheel spin + steer */
+    /* suspension feel: the REAL chassis rolls and pitches now — only the
+       landing squash and wheel cosmetics remain hand-animated */
     const { body, wheels, steerPivots, tail } = car.userData;
-    const accelN = (keys.gas ? 1 : 0) - (keys.brake ? 1.2 : 0);
-    body.rotation.z = THREE.MathUtils.lerp(
-      body.rotation.z,
-      steer * THREE.MathUtils.clamp(speed / VMAX, 0, 1) * 0.12,
-      1 - Math.exp(-dt * 5),
-    );
-    body.rotation.x = THREE.MathUtils.lerp(
-      body.rotation.x,
-      airborne
-        ? THREE.MathUtils.clamp(-vy * 0.03, -0.28, 0.34)
-        : -accelN * 0.035 * THREE.MathUtils.clamp(speed / 14, 0, 1),
-      1 - Math.exp(-dt * 5),
-    );
-    /* landing squash: the suspension takes the hit */
     squash = Math.max(0, squash - dt * 2.8);
     body.scale.y = 1 - 0.2 * squash;
     body.position.y = -0.09 * squash;
@@ -2393,6 +2484,10 @@ export function mount() {
     for (const p of steerPivots)
       p.rotation.y = THREE.MathUtils.lerp(p.rotation.y, steer * 0.42, 1 - Math.exp(-dt * 10));
     tail.material.emissiveIntensity = keys.brake ? 3.4 : 1.4;
+
+    /* sideways velocity = the slide the skid sound and smoke react to */
+    const right = tmpV2.set(1, 0, 0).applyQuaternion(car.quaternion);
+    const drifting = Math.abs(vel.dot(right)) > 6 && speed > 10 && !airborne;
 
     audio.engine(speed, keys.gas ? 1 : 0);
     audio.skid(drifting || (offroad && speed > 14 && !airborne));
