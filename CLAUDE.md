@@ -116,12 +116,24 @@ Rules that keep it healthy:
   persist in localStorage; the full ship state + session score round-trip article
   visits and style flips via sessionStorage (`vector-ship`, saved on pagehide and
   unmount).
-- Portals at the system edge open transit runs — infinite and procedural: seeded
-  with `mulberry()` from `portal index + run level`, one of four challenge kinds
-  (gauntlet / slalom / hunt / surge), difficulty scaling with the level, ending in
-  a separate free-flight boss arena (the tube group is disposed and rebuilt as the
-  cage). Victory bumps the persistent level and relabels the portals. Never use
-  `Math.random` for anything that must look the same across visits.
+- The three portals at the system edge are three FIXED game modes (`MODES`,
+  keyed by portal index, each with its own color identity): THE GAUNTLET
+  (green rail-dodger — rocks, walls, sentries — ending in the warden arena),
+  TIME TRIAL (amber rail-race — gates buy clock time, finish line = victory,
+  no boss), THE SIEGE (magenta — skips the tube, three interceptor waves in
+  the cage, then the warden). All scale with the persistent run level
+  (`vector-runlvl`); layouts are seeded with `mulberry()` from
+  `portal index + run level` — never use `Math.random` for anything that
+  must look the same across visits. Victory bumps the level and relabels
+  the portals. The arena cage is the tube group disposed and rebuilt.
+- Touch input rules, earned on real iPads: never `preventDefault()` a
+  canvas `touchstart` — it kills the implicit pointer capture and the
+  browser ends the pointer stream after the first moves (a canvas-level
+  non-passive `touchmove` preventDefault is fine and backs up
+  `touch-action: none`). Apple Pencil counts as `pen`, not `touch`: sodium
+  accepts it for the stick; vector steers it through mouse-follow, which
+  must NOT be gated off `coarse` (an iPad with a trackpad is coarse with a
+  real cursor — `setPointer` filtering touch is the only guard needed).
 - HUD panels (`.vh-boss` etc.) set `display` explicitly, which beats the UA
   `[hidden]` rule — every such panel needs an explicit `[hidden] { display: none }`
   pair. Damage pops and enemy hp bars render with `depthTest: false` — they spawn

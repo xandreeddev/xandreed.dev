@@ -2002,6 +2002,12 @@ export function mount() {
       },
       { signal, passive: false },
     );
+    /* canvas touchMOVES are the game's, never the page's: stop the browser
+       from claiming a held drag as a scroll and firing pointercancel
+       mid-steer (CSS touch-action should cover this; Safari has dropped it
+       before). Never cancel touchSTART — that kills the implicit pointer
+       capture and Chrome ends the pointer stream after the first moves. */
+    el.addEventListener('touchmove', (e) => e.preventDefault(), { signal, passive: false });
     document.addEventListener('dblclick', (e) => e.preventDefault(), { signal });
 
     addEventListener('pagehide', saveCar, { signal });
@@ -2050,7 +2056,9 @@ export function mount() {
       (e) => {
         audio.unlock();
         dismissOverlay();
-        if (e.pointerType !== 'touch' || stick.id >= 0 || e.clientX > innerWidth * 0.55) return;
+        /* pen counts as touch here — an Apple Pencil has no other way to
+           steer the car (there's no mouse-follow path in this world) */
+        if ((e.pointerType !== 'touch' && e.pointerType !== 'pen') || stick.id >= 0 || e.clientX > innerWidth * 0.55) return;
         stick.id = e.pointerId;
         stick.x0 = e.clientX;
         stick.y0 = e.clientY;

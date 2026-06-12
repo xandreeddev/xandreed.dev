@@ -2447,6 +2447,12 @@ export function mount() {
       },
       { signal, passive: false },
     );
+    /* canvas touchMOVES are the game's, never the page's: stop the browser
+       from claiming a held drag as a scroll and firing pointercancel
+       mid-run (CSS touch-action should cover this; Safari has dropped it
+       before). Never cancel touchSTART — that kills the implicit pointer
+       capture and Chrome ends the pointer stream after the first moves. */
+    el.addEventListener('touchmove', (e) => e.preventDefault(), { signal, passive: false });
     document.addEventListener('dblclick', (e) => e.preventDefault(), { signal });
     addEventListener('pagehide', savePlayer, { signal });
 

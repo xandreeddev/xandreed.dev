@@ -82,13 +82,32 @@ const TREE = [
 ];
 
 /* transit run challenge kinds — picked by the run seed */
-const RUN_KINDS = ['gauntlet', 'slalom', 'hunt', 'surge'];
-const KIND_CFG = {
-  gauntlet: { rocks: [56, 10], gates: 8, walls: [0, 0], adds: [0, 0] },
-  slalom: { rocks: [16, 3], gates: 12, walls: [6, 1], adds: [0, 0] },
-  hunt: { rocks: [14, 2], gates: 9, walls: [0, 0], adds: [3, 0.5] },
-  surge: { rocks: [34, 6], gates: 11, walls: [2, 0.5], adds: [0, 0] },
-};
+/* the three transit gates are three different GAMES, fixed per portal:
+   a rail-dodger, a rail-race against the clock, and a free-flight wave
+   siege. Each carries its own color identity so the portals read apart. */
+const MODES = [
+  {
+    id: 'gauntlet',
+    name: 'THE GAUNTLET',
+    blurb: 'rocks · walls · sentries — survive to the warden',
+    color: '#46ffa0',
+    cfg: { rocks: [44, 8], gates: 4, walls: [4, 0.7], adds: [2, 0.5] },
+  },
+  {
+    id: 'trial',
+    name: 'TIME TRIAL',
+    blurb: 'thread the gates before the clock dies',
+    color: '#ffc46a',
+    cfg: { rocks: [0, 0], gates: 11, walls: [0, 0], adds: [0, 0] },
+  },
+  {
+    id: 'siege',
+    name: 'THE SIEGE',
+    blurb: 'three waves, then the warden',
+    color: '#ff5fd2',
+    cfg: { rocks: [0, 0], gates: 0, walls: [0, 0], adds: [0, 0] },
+  },
+];
 
 const store = {
   visited() {
@@ -726,18 +745,19 @@ const syncHpBar = (e) => {
 /* ----- portals: rings at the system edge that open transit runs ----- */
 
 function makePortal(idx) {
+  const mode = MODES[idx % MODES.length];
   const g = new THREE.Group();
   const ring = new THREE.LineSegments(
     new THREE.WireframeGeometry(new THREE.TorusGeometry(11, 0.35, 4, 48)),
-    wireMat(CYAN, 0.9),
+    wireMat(mode.color, 0.9),
   );
   const inner = new THREE.LineSegments(
     new THREE.WireframeGeometry(new THREE.TorusGeometry(7.5, 0.12, 3, 40)),
-    wireMat(MAGENTA, 0.7),
+    wireMat(CYAN, 0.7),
   );
   const glow = new THREE.Sprite(
     new THREE.SpriteMaterial({
-      map: glowTexture('#6ad8ff'),
+      map: glowTexture(mode.color),
       transparent: true,
       opacity: 0.45,
       blending: THREE.AdditiveBlending,
@@ -1001,6 +1021,8 @@ export function mount() {
     prevT: 0,
     speed: 40,
     base: 42,
+    timer: 0, // trial: seconds left on the race clock
+    wave: 0, // siege: current wave 1..3
     off: new THREE.Vector2(),
     offV: new THREE.Vector2(),
     rocks: [],
@@ -1542,8 +1564,9 @@ export function mount() {
   function startRun(idx) {
     const level = store.runLevel();
     const rnd = mulberry(hash32(`transit-${idx}-L${level}`));
-    const kind = RUN_KINDS[Math.floor(rnd() * RUN_KINDS.length)];
-    const cfg = KIND_CFG[kind];
+    const mode = MODES[idx % MODES.length];
+    const kind = mode.id;
+    const cfg = mode.cfg;
     run.active = true;
     run.idx = idx;
     run.level = level;
@@ -1551,16 +1574,37 @@ export function mount() {
     run.phase = 'tube';
     run.t = 0;
     run.prevT = 0;
-    run.base = kind === 'surge' ? 54 : 42;
+    run.base = kind === 'trial' ? 56 : 42;
     run.speed = run.base - 2;
     run.off.set(0, 0);
     run.offV.set(0, 0);
     run.boss = null;
+    run.timer = 0;
+    run.wave = 0;
     run.rocks = [];
     run.boosts = [];
     run.walls = [];
     run.adds = [];
     run.group = new THREE.Group();
+
+    /* the siege skips the rail entirely: straight into the cage, wave one */
+    if (kind === 'siege') {
+      scene.add(run.group);
+      worldGroup.visible = false;
+      for (const b of ebolts) {
+        b.life = 0;
+        b.line.visible = false;
+      }
+      lockTgt = null;
+      docked = -1;
+      const dockEl = hud?.querySelector('[data-vh-dock]');
+      if (dockEl) dockEl.hidden = true;
+      audio.portal();
+      hud?.toast(`⌬ L${level + 1} THE SIEGE — clear three waves`, 'warn');
+      enterArena({ boss: false });
+      spawnWave(1);
+      return;
+    }
 
     /* the path wanders outward from the portal — longer at depth */
     const segs = 34 + Math.min(14, level * 2);
@@ -1576,8 +1620,10 @@ export function mount() {
     }
     run.curve = new THREE.CatmullRomCurve3(pts);
     run.len = run.curve.getLength();
+    /* the race clock: beatable only by threading gates (each adds time) */
+    if (kind === 'trial') run.timer = run.len / (run.base + 4);
 
-    /* tube rings */
+    /* tube rings — each mode wears its own colors */
     const rings = Math.min(100, 70 + level * 3);
     const ringGeo = new THREE.BufferGeometry().setFromPoints(
       Array.from({ length: 25 }, (_, k) => {
@@ -1589,7 +1635,9 @@ export function mount() {
       const t = i / (rings - 1);
       const ring = new THREE.Line(
         ringGeo,
-        wireMat(i % 7 === 0 ? MAGENTA : GREEN_DIM, i % 7 === 0 ? 0.55 : 0.32),
+        kind === 'trial'
+          ? wireMat(i % 5 === 0 ? AMBER : AMBER, i % 5 === 0 ? 0.6 : 0.2)
+          : wireMat(i % 7 === 0 ? MAGENTA : GREEN_DIM, i % 7 === 0 ? 0.55 : 0.32),
       );
       ring.position.copy(run.curve.getPointAt(t));
       ring.lookAt(run.curve.getPointAt(Math.min(1, t + 0.01)));
@@ -1683,9 +1731,11 @@ export function mount() {
       run.adds.push(e);
     }
 
-    /* boost gates: amber rings — thread them for speed, fuel and score */
-    for (let i = 0; i < cfg.gates; i++) {
-      const t = 0.07 + (i / cfg.gates) * 0.84 + rnd() * 0.04;
+    /* boost gates: amber rings — thread them for speed, fuel and score.
+       In the trial they're the whole game (and each one buys time) */
+    const gateN = kind === 'trial' ? cfg.gates + Math.min(7, level) : cfg.gates;
+    for (let i = 0; i < gateN; i++) {
+      const t = 0.07 + (i / gateN) * 0.84 + rnd() * 0.04;
       const gate = new THREE.LineSegments(
         new THREE.WireframeGeometry(new THREE.TorusGeometry(4.4, 0.12, 3, 28)),
         wireMat(AMBER, 0.9),
@@ -1719,12 +1769,17 @@ export function mount() {
     hud?.els?.cluster?.setAttribute('data-run', '');
     if (hud?.els?.help) hud.els.help.textContent = HELP_RUN;
     audio.portal();
-    hud?.toast(`⌬ L${level + 1} ${kind} — survive to the warden`, 'warn');
+    hud?.toast(
+      kind === 'trial'
+        ? `⌬ L${level + 1} TIME TRIAL — ${Math.ceil(run.timer)}s on the clock, gates buy time`
+        : `⌬ L${level + 1} THE GAUNTLET — survive to the warden`,
+      'warn',
+    );
   }
 
   /* the warden waits in its own space: a caged free-flight arena past the
      tunnel mouth, not a turret duel on the rail */
-  function enterArena() {
+  function enterArena({ boss = true } = {}) {
     run.phase = 'arena';
     scene.remove(run.group);
     disposeObject(run.group);
@@ -1755,8 +1810,33 @@ export function mount() {
     /* free flight again: full controls return */
     hud?.els?.cluster?.removeAttribute('data-run');
     if (hud?.els?.help) hud.els.help.textContent = HELP_ARENA;
-    spawnBoss();
+    if (boss) spawnBoss();
     audio.portal();
+  }
+
+  /* siege waves: rings of interceptors around the cage, then the warden */
+  function spawnWave(n) {
+    run.wave = n;
+    const count = 1 + n + Math.floor(run.level / 2);
+    for (let k = 0; k < count; k++) {
+      const e = makeEnemyCraft(1);
+      const a = (k / count) * Math.PI * 2 + n * 0.7;
+      e.position
+        .copy(run.arenaC)
+        .add(new THREE.Vector3(Math.cos(a) * 55, k % 2 ? 16 : -12, Math.sin(a) * 55));
+      const ehp = 3 + Math.floor(run.level / 2) + (n - 1);
+      e.userData = {
+        vel: new THREE.Vector3(),
+        hp: ehp,
+        hpMax: ehp,
+        fireCd: 1.6 + k * 0.4,
+        radius: 2.2,
+      };
+      run.group.add(e);
+      run.adds.push(e);
+    }
+    audio.boss();
+    hud?.toast(`◬ wave ${n}/3 — ${count} hostiles`, n === 1 ? 'warn' : 'bad');
   }
 
   function spawnBoss() {
@@ -1839,26 +1919,30 @@ export function mount() {
       store.runLevel(1); // every portal gets harder from here on
       relabelPortals();
       audio.chime();
-      hud?.toast(`⌬ warden L${run.level + 1} down — +${gain} · +${sc} scrap · transit level up`, 'ok');
+      const what =
+        run.kind === 'trial'
+          ? `time trial L${run.level + 1} beaten`
+          : run.kind === 'siege'
+            ? `siege L${run.level + 1} broken`
+            : `warden L${run.level + 1} down`;
+      hud?.toast(`⌬ ${what} — +${gain} · +${sc} scrap · transit level up`, 'ok');
     }
   }
 
-  /* portal labels carry the live run level + seeded challenge kind */
+  /* portal labels name the game behind each gate + the live run level */
   function relabelPortals() {
     const level = store.runLevel();
     for (const p of portals) {
-      const rnd = mulberry(hash32(`transit-${p.userData.idx}-L${level}`));
-      const kind = RUN_KINDS[Math.floor(rnd() * RUN_KINDS.length)];
+      const mode = MODES[p.userData.idx % MODES.length];
       const old = p.userData.label;
       if (old) {
         p.remove(old);
         old.material.map?.dispose();
         old.material.dispose();
       }
-      const label = textSprite(
-        [`⌬ transit ${String(p.userData.idx + 1).padStart(2, '0')} · L${level + 1}`, `${kind} run — fly through`],
-        { color: '#6ad8ff' },
-      );
+      const label = textSprite([`⌬ ${mode.name} · L${level + 1}`, `${mode.blurb} — fly through`], {
+        color: mode.color,
+      });
       label.position.y = 17;
       p.add(label);
       p.userData.label = label;
@@ -2070,8 +2154,8 @@ export function mount() {
       worldGroup.add(routeDots);
     }
 
-    /* portals out at the edge — each opens a seeded transit run */
-    for (let i = 0; i < 3; i++) {
+    /* portals out at the edge — one per game mode (MODES is index-keyed) */
+    for (let i = 0; i < MODES.length; i++) {
       const p = makePortal(i);
       const a = i * ((Math.PI * 2) / 3) + 0.6;
       p.position.set(Math.cos(a) * 560, 8, Math.sin(a) * 560);
@@ -2175,6 +2259,25 @@ export function mount() {
     syncCluster();
     document.documentElement.dataset.world = 'on';
 
+    /* QA hook for headless steering/run tests — inert unless the flag is set */
+    try {
+      if (localStorage.getItem('vector-debug'))
+        window.__vw = {
+          startRun,
+          run,
+          stick,
+          pointer,
+          keys,
+          camera,
+          get ship() {
+            return ship;
+          },
+          get locked() {
+            return pointerLocked;
+          },
+        };
+    } catch {}
+
     if (cores > 0)
       hud.toast(
         `⬡ ${cores} core${cores > 1 ? 's' : ''} banked — ${coarse ? 'tap ⬡ tree' : 'press T'} to install components`,
@@ -2249,6 +2352,12 @@ export function mount() {
       },
       { signal, passive: false },
     );
+    /* canvas touchMOVES are the game's, never the page's: stop the browser
+       from claiming a held drag as a scroll and firing pointercancel
+       mid-steer (CSS touch-action should cover this; Safari has dropped it
+       before). Never cancel touchSTART — that kills the implicit pointer
+       capture and Chrome ends the pointer stream after the first moves. */
+    el.addEventListener('touchmove', (e) => e.preventDefault(), { signal, passive: false });
     document.addEventListener('dblclick', (e) => e.preventDefault(), { signal });
 
     /* the ship survives navigation: stash full state before the page goes */
@@ -2401,7 +2510,9 @@ export function mount() {
             location.href = hit.object.userData.href;
             return;
           }
-          if (!coarse && e.pointerType !== 'touch') el.requestPointerLock?.();
+          /* any real mouse may lock — including a trackpad on an iPad,
+             where the device still reports pointer: coarse */
+          if (e.pointerType === 'mouse') el.requestPointerLock?.();
         }
       },
       { signal },
@@ -2583,13 +2694,15 @@ export function mount() {
       ship.rotateX(-mouseDY * 0.0019 * stats.turn);
       mouseDX = 0;
       mouseDY = 0;
-    } else if (stick.id >= 0 || coarse) {
+    } else if (stick.id >= 0) {
       /* virtual stick: quadratic response keeps small corrections gentle */
       const cx = stick.x * Math.abs(stick.x);
       const cy = stick.y * Math.abs(stick.y);
       ship.rotateY(-cx * 1.6 * stats.turn * dt);
       ship.rotateX(-cy * 1.25 * stats.turn * dt);
     } else {
+      /* mouse-follow — pointer only ever moves from mouse/pen (setPointer
+         filters touch), so coarse devices with a trackpad steer too */
       const dz = 0.07;
       const yawIn = Math.abs(pointer.x) > dz ? -(pointer.x - Math.sign(pointer.x) * dz) : 0;
       const pitchIn = Math.abs(pointer.y) > dz ? pointer.y - Math.sign(pointer.y) * dz : 0;
@@ -2600,7 +2713,10 @@ export function mount() {
 
     /* visual bank from turn input, hull-only */
     const hull = ship.userData.hull;
-    const steerX = stick.id >= 0 ? stick.x : coarse ? 0 : pointer.x;
+    /* pointer.x only ever comes from mouse/pen (setPointer filters touch),
+       so it's safe on coarse devices too — iPads with a trackpad steer
+       with the cursor like any desktop */
+    const steerX = stick.id >= 0 ? stick.x : pointer.x;
     const bankIn = pointerLocked ? 0 : THREE.MathUtils.clamp(-steerX, -0.7, 0.7);
     hull.rotation.z = THREE.MathUtils.lerp(hull.rotation.z, bankIn, 1 - Math.exp(-dt * 4));
 
@@ -2792,8 +2908,8 @@ export function mount() {
       mouseDX = 0;
       mouseDY = 0;
     } else {
-      const cx = stick.id >= 0 ? stick.x * Math.abs(stick.x) : coarse ? 0 : pointer.x;
-      const cy = stick.id >= 0 ? -stick.y * Math.abs(stick.y) : coarse ? 0 : pointer.y;
+      const cx = stick.id >= 0 ? stick.x * Math.abs(stick.x) : pointer.x;
+      const cy = stick.id >= 0 ? -stick.y * Math.abs(stick.y) : pointer.y;
       run.offV.x += cx * 110 * dt;
       run.offV.y += cy * 110 * dt;
     }
@@ -2815,9 +2931,24 @@ export function mount() {
     );
     audio.thrust(true, boosting);
 
+    /* the race clock — gates are the only way to stay ahead of it */
+    if (run.kind === 'trial') {
+      run.timer -= dt;
+      if (run.timer <= 0) {
+        explode(ship.position, '#ffc46a');
+        audio.boom(true);
+        hud?.toast('⏱ OUT OF TIME — the gate spits you home', 'bad');
+        endRun(false);
+        return;
+      }
+    }
+
     run.t = Math.min(1, run.t + (run.speed / run.len) * dt);
     if (run.t >= 0.97) {
-      enterArena();
+      if (run.kind === 'trial') {
+        addScore(Math.round(Math.max(0, run.timer) * 25));
+        endRun(true);
+      } else enterArena();
       return;
     }
     const t = run.t;
@@ -2937,7 +3068,10 @@ export function mount() {
         fuel = 100;
         addScore(40);
         audio.pickup();
-        hud?.toast('⚡ gate +40', 'ok');
+        if (run.kind === 'trial') {
+          run.timer += 2.4;
+          hud?.toast('⚡ gate +2.4s', 'ok');
+        } else hud?.toast('⚡ gate +40', 'ok');
       }
     }
 
@@ -3048,6 +3182,12 @@ export function mount() {
         killAdd(en);
         if (!run.active) return;
       }
+    }
+
+    /* siege: the next wave rolls in when the cage empties; the warden last */
+    if (run.kind === 'siege' && !run.boss && run.adds.length === 0) {
+      if (run.wave < 3) spawnWave(run.wave + 1);
+      else spawnBoss();
     }
   }
 
@@ -3492,8 +3632,12 @@ export function mount() {
       els.boost.style.width = `${fuel}%`;
       els.stats.textContent = run.active
         ? run.phase === 'arena'
-          ? `WARDEN ${Math.max(0, Math.ceil(run.boss?.userData.hp ?? 0))} · L${run.level + 1} ${run.kind} · score ${score}`
-          : `v ${Math.round(run.speed)} · ⌬ ${Math.round(run.t * 100)}% · L${run.level + 1} ${run.kind} · score ${score}`
+          ? run.boss
+            ? `WARDEN ${Math.max(0, Math.ceil(run.boss.userData.hp))} · L${run.level + 1} ${run.kind} · score ${score}`
+            : `WAVE ${run.wave}/3 · ◬ ${run.adds.length} left · L${run.level + 1} siege · score ${score}`
+          : run.kind === 'trial'
+            ? `⏱ ${Math.max(0, run.timer).toFixed(1)}s · ⌬ ${Math.round(run.t * 100)}% · L${run.level + 1} trial · score ${score}`
+            : `v ${Math.round(run.speed)} · ⌬ ${Math.round(run.t * 100)}% · L${run.level + 1} ${run.kind} · score ${score}`
         : `v ${Math.round(vel.length())} · ◆ ${scrap} · ⬡ ${cores} · score ${score}`;
       /* boss bar: front and center while the warden lives */
       const bossOn = run.active && !!run.boss;

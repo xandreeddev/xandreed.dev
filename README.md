@@ -111,10 +111,12 @@ them oldest → newest.
   the afterburner; the ai branch installs autonomous modules — a sentry turret,
   plasma-burn rounds, a missile autoloader — and support nodes that overclock
   them. Every hit shows its number; every enemy carries its health bar.
-- **Transit runs** — portal rings at the system edge open infinite procedural
-  tunnels: four challenge kinds (gauntlet, slalom, hunt, surge) that scale with
-  a persistent run level, ending in a free-flight arena against the warden —
-  boss bar, escort waves and all. Win and every portal levels up.
+- **Three portals, three games** — each gate at the system edge is its own
+  mode with its own colors: THE GAUNTLET (a green tunnel of rocks, walls and
+  sentries ending at the warden), TIME TRIAL (an amber rail-race where gates
+  buy clock time and the finish line is the win), and THE SIEGE (straight
+  into the cage: three interceptor waves, then the warden). All scale with a
+  persistent run level — win anywhere and every portal levels up.
 - **Sound** — every effect synthesized in WebAudio, zero assets. `M` mutes.
 
 Ship state and score survive article round-trips. The world reads the post
