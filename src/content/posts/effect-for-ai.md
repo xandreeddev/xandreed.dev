@@ -1,9 +1,8 @@
 ---
 title: 'AI applications are Effect-shaped'
 description: 'Flaky IO, string boundaries, provider churn, fan-out, cancellation that stops billing — the defining problems of LLM apps are the ones effect systems were built for.'
-pubDate: 2026-06-12
+pubDate: 2026-06-19
 tags: [effect, ai]
-draft: true
 ---
 
 Strip any LLM application to its load-bearing properties and you get a list: every important call is slow, expensive, rate-limited, and nondeterministic. Every output is a string that must become structure. The vendor you build on today will be the fallback you route around next quarter. Parallelism is the difference between a usable product and a demo, and *cancelling* work isn't hygiene — it's money.

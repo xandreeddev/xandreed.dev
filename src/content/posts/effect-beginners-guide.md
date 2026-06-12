@@ -1,9 +1,8 @@
 ---
 title: 'Effect from zero: the beginner''s guide I wanted'
 description: 'Programs as values, errors you can see, and batteries included — Effect.ts from nothing, with standalone examples and a map of what to ignore at first.'
-pubDate: 2026-06-12
+pubDate: 2026-06-05
 tags: [effect, typescript]
-draft: true
 ---
 
 Every Effect resource I found when I started assumed I already believed. The docs are a reference, the talks sell the vision, and the examples jump to layered architectures before explaining why `yield*` is everywhere. This is the guide I wanted instead: start from zero, build one small real thing, and be honest about which 10% of the library you need on day one.
