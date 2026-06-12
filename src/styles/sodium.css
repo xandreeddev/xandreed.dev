@@ -636,13 +636,25 @@
 }
 
 @media (pointer: coarse) {
+  /* the legend stays (it spells the touch binds) — wrap it inside the gap
+     between the stick zone and the pedal cluster */
   .sodium-hud .sd-help {
-    display: none;
+    white-space: normal;
+    text-align: center;
+    max-width: calc(100vw - 27rem);
+    bottom: calc(1.1rem + env(safe-area-inset-bottom, 0px));
   }
   .sodium-hud .sd-dock {
     left: calc(1rem + env(safe-area-inset-left, 0px));
     transform: none;
     max-width: calc(100vw - 14rem);
+  }
+}
+
+/* coarse phones: no room under the thumbs — iPads keep the legend */
+@media (pointer: coarse) and (max-width: 700px), (pointer: coarse) and (max-height: 480px) {
+  .sodium-hud .sd-help {
+    display: none;
   }
 }
 

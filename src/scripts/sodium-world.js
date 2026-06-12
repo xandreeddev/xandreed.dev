@@ -558,7 +558,10 @@ function billboardTexture(post, i, found) {
 
 /* ----- HUD ----- */
 
-const HELP = 'W gas · S brake · A/D steer · space drift · ↵ read at an exit · M sound';
+/* iPad gets the same legend as desktop — it just spells the touch binds */
+const HELP = coarse
+  ? 'stick steers · ▲ gas latches · ⊕ drift · pull in to read'
+  : 'W gas · S brake · A/D steer · space drift · ↵ read at an exit · M sound';
 
 function makeHud(total, foundCount) {
   const hud = document.createElement('div');

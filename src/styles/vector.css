@@ -726,9 +726,14 @@
 }
 
 @media (pointer: coarse) {
-  /* the overlay explains touch; the keyboard legend is noise */
+  /* the legend stays (it spells the touch binds) — let it wrap inside the
+     gap between the stick zone and the button cluster */
   .vector-hud .vh-help {
-    display: none;
+    white-space: normal;
+    text-align: center;
+    /* the six-button cluster is wide — clear it even on portrait iPad */
+    max-width: calc(100vw - 33rem);
+    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
   }
 
   /* comfortable thumb targets for the corner pair */
@@ -746,6 +751,13 @@
     max-width: calc(100vw - 13.5rem);
     text-align: left;
     font-size: 1.05rem;
+  }
+}
+
+/* coarse phones: no room under the thumbs — iPads keep the legend */
+@media (pointer: coarse) and (max-width: 700px), (pointer: coarse) and (max-height: 480px) {
+  .vector-hud .vh-help {
+    display: none;
   }
 }
 

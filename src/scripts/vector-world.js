@@ -769,11 +769,16 @@ function jitter(geo, seed) {
 
 /* ----- HUD ----- */
 
-const HELP_WORLD =
-  'mouse aim · W thrust · shift boost · space fire · E missile · Q parry · S brake · T tree · M sound · esc release';
-const HELP_RUN =
-  'steer across the tube · shift boost · S brake · space fire · E missile · Q parry';
-const HELP_ARENA = 'free flight — bring the warden down · space fire · E missile · Q parry';
+/* iPad gets the same legend as desktop — it just spells the touch binds */
+const HELP_WORLD = coarse
+  ? 'stick steers · ▲ latches thrust · ⚡ holds boost · tap a planet to read it'
+  : 'mouse aim · W thrust · shift boost · space fire · E missile · Q parry · S brake · T tree · M sound · esc release';
+const HELP_RUN = coarse
+  ? 'steer across the tube · ⚡ boost · ■ brake'
+  : 'steer across the tube · shift boost · S brake · space fire · E missile · Q parry';
+const HELP_ARENA = coarse
+  ? 'free flight — bring the warden down'
+  : 'free flight — bring the warden down · space fire · E missile · Q parry';
 
 function makeHud(n) {
   const hud = document.createElement('div');

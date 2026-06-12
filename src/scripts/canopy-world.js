@@ -367,7 +367,10 @@ function signTexture(post, read) {
 
 /* ----- HUD ----- */
 
-const HELP = 'WASD run · space jump · shift dash · drag to look · ↵ read at a tree · M sound';
+/* iPad gets the same legend as desktop — it just spells the touch binds */
+const HELP = coarse
+  ? 'stick runs · A jump · B dash · drag to look · tap the card to read'
+  : 'WASD run · space jump · shift dash · drag to look · ↵ read at a tree · M sound';
 
 function makeHud(powers, coins, stars, total) {
   const hud = document.createElement('div');

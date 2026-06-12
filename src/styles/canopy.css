@@ -529,12 +529,25 @@
   z-index: 6;
 }
 
+@media (pointer: coarse) {
+  /* the legend stays (it spells the touch binds) — wrap it inside the gap
+     between the stick zone and the A/B cluster */
+  .canopy-hud .cp-help {
+    white-space: normal;
+    text-align: center;
+    max-width: calc(100vw - 24rem);
+  }
+}
+
 @media (max-width: 640px) {
   .canopy-hud .cp-meta {
     font-size: 0.82rem;
     padding: 0.4rem 0.6rem;
   }
+}
 
+/* coarse phones: no room under the thumbs — iPads keep the legend */
+@media (max-width: 640px), (pointer: coarse) and (max-height: 480px) {
   .canopy-hud .cp-help {
     display: none;
   }
