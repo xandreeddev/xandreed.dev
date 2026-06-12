@@ -210,6 +210,14 @@ Rules that keep it healthy:
 - `mergeGeometries` requires all-indexed or all-non-indexed inputs: polyhedra
   (Icosahedron/Dodecahedron) are non-indexed — `.toNonIndexed()` the Box/Cone
   parts or the merge returns null and the mount dies.
+- The player is a cel-shaded chibi rig (`MeshToonMaterial` + shared 3-step
+  `toneRamp`, inverted-hull ink outlines riding each limb group). The face is
+  an UNLIT canvas patch (`MeshBasicMaterial`) hugging the skull, redrawn only
+  on blink — and the hair crown's front hemisphere must stop at the hairline
+  (`thetaLength ~1.1`); a full-wrap crown sits at r 0.37 and silently covers
+  the r 0.348 face patch. The scarf is a follow-the-leader chain in world
+  space: set seg positions first, `player.updateMatrixWorld()`, THEN `lookAt`
+  — lookAt reads each seg's own stale matrixWorld otherwise.
 
 ## Deploy / domain
 

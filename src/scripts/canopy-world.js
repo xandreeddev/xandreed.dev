@@ -1356,50 +1356,250 @@ export function mount() {
     }
   }
 
-  /* ----- the player: a little sprout-bot ----- */
+  /* ----- the player: a cel-shaded sprout adventurer -----
+     Genshin grammar on a chibi frame: 3-band toon shading, ink outlines
+     (inverted hulls riding each limb group), an unlit anime face that
+     blinks, chunky hair silhouette, and a follow-the-leader scarf. The
+     sprout stays — it's the character, and its leaves still grow with
+     the read count. */
+
+  /* shared 3-step ramp: hard terminator, Genshin-style */
+  const toneRamp = new THREE.DataTexture(new Uint8Array([95, 170, 255]), 3, 1, THREE.RedFormat);
+  toneRamp.minFilter = toneRamp.magFilter = THREE.NearestFilter;
+  toneRamp.needsUpdate = true;
+  signal.addEventListener('abort', () => toneRamp.dispose());
+
+  const INK = 0x223326;
 
   function makePlayer() {
+    const toon = (color) => new THREE.MeshToonMaterial({ color, gradientMap: toneRamp });
+    const inkM = new THREE.MeshBasicMaterial({ color: INK, side: THREE.BackSide });
+    /* inverted-hull outline that rides the same group as its mesh */
+    const outline = (mesh, fat = 1.05) => {
+      const o = new THREE.Mesh(mesh.geometry, inkM);
+      o.position.copy(mesh.position);
+      o.rotation.copy(mesh.rotation);
+      o.scale.copy(mesh.scale).multiplyScalar(fat);
+      o.userData.outline = true;
+      mesh.parent.add(o);
+    };
+
+    const skinM = toon(0xffe3c8);
+    const hairM = toon(0xeead3e);
+    const tunicM = toon(0x4fbb66);
+    const pineM = toon(0x2c6e48);
+    const bootM = toon(0x8a5a33);
+    const creamM = toon(0xfff1d6);
+    creamM.side = THREE.DoubleSide;
+
     const p = new THREE.Group();
     const body = new THREE.Group();
-    const skin = new THREE.MeshStandardMaterial({ color: 0x58c46a, roughness: 0.5 });
-    const belly = new THREE.MeshStandardMaterial({ color: 0xf2eedd, roughness: 0.6 });
-    const tub = new THREE.Mesh(new RoundedBoxGeometry(0.9, 1.0, 0.74, 3, 0.3), skin);
-    tub.position.y = 0.62;
-    const face = new THREE.Mesh(new RoundedBoxGeometry(0.62, 0.5, 0.1, 2, 0.05), belly);
-    face.position.set(0, 0.72, 0.34);
-    const eyeM = new THREE.MeshStandardMaterial({ color: 0x202830, roughness: 0.3 });
-    for (const sx of [-0.15, 0.15]) {
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), eyeM);
-      eye.position.set(sx, 0.78, 0.4);
-      body.add(eye);
+
+    /* torso: tunic with a flared hem and a gold belt */
+    const torso = new THREE.Group();
+    torso.position.y = 0.62;
+    const tunic = new THREE.Mesh(new RoundedBoxGeometry(0.5, 0.46, 0.38, 3, 0.12), tunicM);
+    tunic.position.y = 0.26;
+    const hem = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.3, 14), tunicM);
+    hem.position.y = 0.06;
+    const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.29, 0.07, 14), toon(GOLD));
+    belt.position.y = 0.13;
+    torso.add(tunic, hem, belt);
+    outline(tunic);
+    outline(hem);
+
+    /* legs: pivot at the hip so they swing */
+    const mkLeg = (sx) => {
+      const g = new THREE.Group();
+      g.position.set(sx, 0.42, 0);
+      const shin = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.2, 4, 10), pineM);
+      shin.position.y = -0.16;
+      const boot = new THREE.Mesh(new RoundedBoxGeometry(0.17, 0.13, 0.27, 2, 0.05), bootM);
+      boot.position.set(0, -0.32, 0.04);
+      g.add(shin, boot);
+      outline(shin, 1.08);
+      outline(boot, 1.08);
+      body.add(g);
+      return g;
+    };
+    const legL = mkLeg(-0.14);
+    const legR = mkLeg(0.14);
+
+    /* arms: pivot at the shoulder, mitten hands */
+    const mkArm = (sx) => {
+      const g = new THREE.Group();
+      g.position.set(sx, 1.0, 0);
+      const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.2, 4, 10), tunicM);
+      arm.position.y = -0.14;
+      const mitt = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 8), skinM);
+      mitt.position.y = -0.3;
+      g.add(arm, mitt);
+      outline(arm, 1.08);
+      outline(mitt, 1.08);
+      body.add(g);
+      return g;
+    };
+    const armL = mkArm(-0.31);
+    const armR = mkArm(0.31);
+
+    /* head: big sphere, anime face patch, chunky hair, ahoge, the sprout */
+    const head = new THREE.Group();
+    head.position.y = 1.08;
+    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.34, 24, 18), skinM);
+    skull.position.y = 0.24;
+    head.add(skull);
+    outline(skull, 1.045);
+
+    /* hair: crown + swept fringe + side bangs, merged to one draw */
+    {
+      const parts = [];
+      /* crown stops at the hairline in front (the face must show), but
+         wraps down to the nape in back — +z is the front half (φ 0..π) */
+      const crownF = new THREE.SphereGeometry(0.37, 20, 12, 0, Math.PI, 0, 1.12);
+      crownF.translate(0, 0.27, -0.02);
+      parts.push(crownF);
+      const crownB = new THREE.SphereGeometry(0.37, 20, 14, Math.PI, Math.PI, 0, 2.1);
+      crownB.translate(0, 0.27, -0.02);
+      parts.push(crownB);
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 4 - 0.5) * 1.5;
+        /* swept fringe on the hairline — must not curtain the eyes */
+        const tuft = new THREE.SphereGeometry(0.105, 8, 6);
+        tuft.scale(1, 1.25, 0.85);
+        tuft.rotateX(0.3 + (i % 2) * 0.15);
+        tuft.translate(Math.sin(a) * 0.28, 0.46, Math.cos(a) * 0.28);
+        parts.push(tuft);
+      }
+      for (const sx of [-1, 1]) {
+        /* side bangs frame the face beside the ears, never across it */
+        const bang = new THREE.SphereGeometry(0.09, 8, 6);
+        bang.scale(0.8, 2.2, 0.9);
+        bang.translate(sx * 0.33, 0.08, -0.01);
+        parts.push(bang);
+      }
+      const hairGeo = mergeGeometries(parts);
+      const hair = new THREE.Mesh(hairGeo, hairM);
+      head.add(hair);
+      outline(hair, 1.045);
     }
-    /* the sprout on top — grows leaves with your read count */
-    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 0.35, 6), skin);
-    stem.position.y = 1.3;
-    const leafG = new THREE.SphereGeometry(0.17, 6, 5);
+
+    /* ahoge — the one rebellious strand; it sways in idle */
+    const ahoge = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.26, 6), hairM);
+    ahoge.position.set(0.05, 0.66, -0.02);
+    ahoge.rotation.z = -0.35;
+    head.add(ahoge);
+
+    /* the sprout, now a hair ornament — leaves still track read count */
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.045, 0.22, 6), pineM);
+    stem.position.set(-0.1, 0.66, 0);
+    stem.rotation.z = 0.25;
+    head.add(stem);
+    const leafG = new THREE.SphereGeometry(0.13, 6, 5);
     leafG.scale(1.6, 0.5, 0.8);
-    const leafM = new THREE.MeshStandardMaterial({ color: 0x7adf8a, roughness: 0.6 });
+    const leafM = toon(0x7adf8a);
     const leaves = Math.min(4, 1 + Math.floor(read.size / 3));
     for (let i = 0; i < leaves; i++) {
       const leaf = new THREE.Mesh(leafG, leafM);
-      leaf.position.y = 1.5;
+      leaf.position.set(-0.13 + Math.cos((i / leaves) * Math.PI * 2) * 0.09, 0.78, Math.sin((i / leaves) * Math.PI * 2) * 0.09);
       leaf.rotation.y = (i / leaves) * Math.PI * 2;
       leaf.rotation.z = 0.5;
-      leaf.position.x = Math.cos((i / leaves) * Math.PI * 2) * 0.14;
-      leaf.position.z = Math.sin((i / leaves) * Math.PI * 2) * 0.14;
-      body.add(leaf);
+      head.add(leaf);
     }
-    const feet = [];
-    for (const sx of [-0.26, 0.26]) {
-      const foot = new THREE.Mesh(new RoundedBoxGeometry(0.3, 0.2, 0.42, 2, 0.08), belly);
-      foot.position.set(sx, 0.1, 0.02);
-      body.add(foot);
-      feet.push(foot);
+
+    /* face: unlit canvas ink on a curved patch hugging the skull — Genshin
+       faces don't take the light bands, they stay drawn */
+    const faceC = document.createElement('canvas');
+    faceC.width = faceC.height = 256;
+    const faceTex = new THREE.CanvasTexture(faceC);
+    faceTex.colorSpace = THREE.SRGBColorSpace;
+    const drawFace = (open) => {
+      const x = faceC.getContext('2d');
+      x.clearRect(0, 0, 256, 256);
+      x.lineCap = 'round';
+      for (const ex of [78, 178]) {
+        if (open) {
+          /* big iris with a falling gradient + twin highlights */
+          x.fillStyle = '#2a2620';
+          x.beginPath();
+          x.ellipse(ex, 110, 33, 43, 0, 0, Math.PI * 2);
+          x.fill();
+          const g = x.createLinearGradient(0, 75, 0, 150);
+          g.addColorStop(0, '#3f8f5a');
+          g.addColorStop(1, '#a9f0bd');
+          x.fillStyle = g;
+          x.beginPath();
+          x.ellipse(ex, 115, 25, 34, 0, 0, Math.PI * 2);
+          x.fill();
+          x.fillStyle = '#2a2620';
+          x.beginPath();
+          x.ellipse(ex, 116, 10, 15, 0, 0, Math.PI * 2);
+          x.fill();
+          x.fillStyle = '#fff';
+          x.beginPath();
+          x.ellipse(ex - 10, 94, 9, 12, -0.3, 0, Math.PI * 2);
+          x.fill();
+          x.beginPath();
+          x.ellipse(ex + 12, 132, 4.5, 6, 0, 0, Math.PI * 2);
+          x.fill();
+        } else {
+          x.strokeStyle = '#2a2620';
+          x.lineWidth = 8;
+          x.beginPath();
+          x.moveTo(ex - 28, 112);
+          x.quadraticCurveTo(ex, 130, ex + 28, 112);
+          x.stroke();
+        }
+        /* brow */
+        x.strokeStyle = '#b5772e';
+        x.lineWidth = 9;
+        x.beginPath();
+        x.moveTo(ex - 26, 54);
+        x.quadraticCurveTo(ex, 42, ex + 26, 52);
+        x.stroke();
+        /* blush */
+        x.fillStyle = 'rgba(255,138,118,0.35)';
+        x.beginPath();
+        x.ellipse(ex, 168, 17, 9, 0, 0, Math.PI * 2);
+        x.fill();
+      }
+      /* small open smile */
+      x.fillStyle = '#2a2620';
+      x.beginPath();
+      x.moveTo(108, 182);
+      x.quadraticCurveTo(128, 204, 148, 182);
+      x.quadraticCurveTo(128, 191, 108, 182);
+      x.fill();
+      faceTex.needsUpdate = true;
+    };
+    drawFace(true);
+    const facePatch = new THREE.Mesh(
+      /* low on the skull, chibi-style: big forehead under the fringe */
+      new THREE.SphereGeometry(0.348, 24, 18, Math.PI / 2 - 0.72, 1.44, Math.PI / 2 - 0.28, 1.0),
+      new THREE.MeshBasicMaterial({ map: faceTex, transparent: true }),
+    );
+    facePatch.position.y = 0.24;
+    head.add(facePatch);
+    body.add(torso, head);
+
+    /* scarf: follow-the-leader chain rooted at the neck */
+    const scarfSegs = [];
+    const scarfPts = [];
+    const SEG = 0.15;
+    for (let i = 0; i < 6; i++) {
+      const w = 0.2 - i * 0.018;
+      const seg = new THREE.Mesh(new THREE.BoxGeometry(w, 0.025, SEG), creamM);
+      seg.castShadow = true;
+      p.add(seg);
+      scarfSegs.push(seg);
+      scarfPts.push(new THREE.Vector3(0, 1.0 - i * SEG, -0.2));
     }
-    body.add(tub, face, stem);
+    scarfPts.push(new THREE.Vector3(0, 1.0 - 6 * SEG, -0.2)); /* 7 pts → 6 segments */
+
     body.traverse((o) => {
-      if (o.isMesh) o.castShadow = true;
+      if (o.isMesh && !o.userData.outline) o.castShadow = true;
     });
+    facePatch.castShadow = false;
+
     /* soft blob shadow helper for height reading */
     const blobShadow = new THREE.Mesh(
       new THREE.CircleGeometry(0.55, 18),
@@ -1407,11 +1607,16 @@ export function mount() {
     );
     blobShadow.rotation.x = -Math.PI / 2;
     p.add(body, blobShadow);
-    p.userData = { body, feet, blobShadow };
+    p.userData = { body, blobShadow, rig: { head, torso, armL, armR, legL, legR, ahoge, scarfSegs, scarfPts, drawFace } };
     return p;
   }
   const player = makePlayer();
   scene.add(player);
+  /* face blink state + run-cycle phase live outside the rig */
+  let blinkT = 2.5;
+  let eyesOpen = true;
+  let runPhase = 0;
+  const scarfV = new THREE.Vector3();
 
   /* ----- state ----- */
 
@@ -1988,22 +2193,114 @@ export function mount() {
       }
     }
 
-    /* --- player visuals: facing, squash, feet, blob shadow --- */
-    const { body, feet, blobShadow } = player.userData;
+    /* --- player visuals: pose machine, scarf, face, blob shadow --- */
+    const { body, blobShadow, rig } = player.userData;
     body.rotation.y = THREE.MathUtils.lerp(body.rotation.y, facing, 1 - Math.exp(-dt * 12));
     squash *= Math.exp(-dt * 7);
     body.scale.y = 1 - squash * 0.3;
     body.scale.x = body.scale.z = 1 + squash * 0.18;
-    const speed2 = vel.x * vel.x + vel.z * vel.z;
-    if (onGround && speed2 > 4) {
-      const step = Math.sin(time * 14);
-      feet[0].position.y = 0.1 + Math.max(0, step) * 0.18;
-      feet[1].position.y = 0.1 + Math.max(0, -step) * 0.18;
-    } else {
-      feet[0].position.y = feet[1].position.y = 0.1;
+    const spd = Math.hypot(vel.x, vel.z);
+    const run = THREE.MathUtils.clamp(spd / 8, 0, 1);
+    runPhase += spd * dt * 1.9;
+    {
+      const k = 1 - Math.exp(-dt * 11);
+      const pose = (o, rx, rz = 0) => {
+        o.rotation.x = THREE.MathUtils.lerp(o.rotation.x, rx, k);
+        o.rotation.z = THREE.MathUtils.lerp(o.rotation.z, rz, k);
+      };
+      if (dashT > 0) {
+        /* dash: hard lean, arms swept back */
+        pose(rig.armL, 1.3, -0.25);
+        pose(rig.armR, 1.3, 0.25);
+        pose(rig.legL, 0.7);
+        pose(rig.legR, -0.4);
+        pose(rig.torso, 0.45);
+        pose(rig.head, -0.2);
+      } else if (gliding) {
+        /* glide: full wingspan, legs trailing */
+        pose(rig.armL, 0, -1.5);
+        pose(rig.armR, 0, 1.5);
+        pose(rig.legL, 0.35);
+        pose(rig.legR, 0.45);
+        pose(rig.torso, 0.3);
+        pose(rig.head, -0.15);
+      } else if (!onGround) {
+        if (vel.y > 1) {
+          /* rising: tuck, arms thrown up */
+          pose(rig.armL, -2.4, -0.35);
+          pose(rig.armR, -2.4, 0.35);
+          pose(rig.legL, -0.9);
+          pose(rig.legR, 0.6);
+          pose(rig.torso, 0.12);
+          pose(rig.head, 0);
+        } else {
+          /* falling: limbs spread, braced */
+          pose(rig.armL, -0.6, -0.9);
+          pose(rig.armR, -0.6, 0.9);
+          pose(rig.legL, 0.25);
+          pose(rig.legR, -0.25);
+          pose(rig.torso, -0.06);
+          pose(rig.head, 0.08);
+        }
+      } else if (run > 0.12) {
+        /* run cycle keyed to ground speed, arms counter-swing */
+        const s = Math.sin(runPhase);
+        pose(rig.legL, s * 0.95 * run);
+        pose(rig.legR, -s * 0.95 * run);
+        pose(rig.armL, -s * 0.75 * run, -0.12);
+        pose(rig.armR, s * 0.75 * run, 0.12);
+        pose(rig.torso, 0.14 * run);
+        pose(rig.head, -0.05 * run);
+        rig.head.position.y = 1.08 + Math.abs(Math.cos(runPhase)) * 0.035 * run;
+      } else {
+        /* idle: breathing */
+        pose(rig.armL, 0, -0.08);
+        pose(rig.armR, 0, 0.08);
+        pose(rig.legL, 0);
+        pose(rig.legR, 0);
+        pose(rig.torso, 0);
+        pose(rig.head, 0);
+        rig.head.position.y = 1.08 + Math.sin(time * 2) * 0.012;
+      }
     }
+    rig.ahoge.rotation.x = Math.sin(time * 2.6) * 0.18;
     if (gliding && !reduced) body.rotation.z = Math.sin(time * 6) * 0.12;
     else body.rotation.z = 0;
+
+    /* blink */
+    blinkT -= dt;
+    if (blinkT <= 0 && eyesOpen) {
+      rig.drawFace(false);
+      eyesOpen = false;
+    }
+    if (blinkT <= -0.13 && !eyesOpen) {
+      rig.drawFace(true);
+      eyesOpen = true;
+      blinkT = 2.2 + Math.random() * 2.6;
+    }
+
+    /* scarf: follow-the-leader with droop and breeze, world space */
+    {
+      const yaw = body.rotation.y;
+      const pts = rig.scarfPts;
+      scarfV.set(player.position.x - 0.2 * Math.sin(yaw), player.position.y + 1.02, player.position.z - 0.2 * Math.cos(yaw));
+      pts[0].copy(scarfV);
+      for (let i = 1; i < pts.length; i++) {
+        const pt = pts[i];
+        pt.y -= dt * 2.2;
+        pt.x += Math.sin(time * 3.1 + i * 1.1) * dt * 0.35;
+        scarfV.subVectors(pt, pts[i - 1]);
+        const L = scarfV.length() || 1e-5;
+        pt.copy(pts[i - 1]).addScaledVector(scarfV, 0.15 / L);
+      }
+      for (let i = 0; i < rig.scarfSegs.length; i++) {
+        const m = rig.scarfSegs[i];
+        m.position.copy(pts[i]).add(pts[i + 1]).multiplyScalar(0.5).sub(player.position);
+      }
+      /* lookAt reads each seg's own matrixWorld — refresh after moving them */
+      player.updateMatrixWorld();
+      for (let i = 0; i < rig.scarfSegs.length; i++) rig.scarfSegs[i].lookAt(pts[i + 1]);
+    }
     const gB = findGround();
     blobShadow.position.y = (gB.top > -Infinity ? gB.top : 0) - player.position.y + 0.03;
     blobShadow.material.opacity = THREE.MathUtils.clamp(
