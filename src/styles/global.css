@@ -784,6 +784,15 @@ main {
   margin: 1.8em 0;
 }
 
+/* wide tables scroll in place instead of widening the page on phones;
+   desktop keeps real table layout (block-mode rows don't stretch) */
+@media (max-width: 640px) {
+  .prose table {
+    display: block;
+    overflow-x: auto;
+  }
+}
+
 .prose th {
   text-align: left;
   font-weight: 600;
@@ -818,6 +827,8 @@ main {
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 0.08em 0.32em;
+  /* long identifiers must break rather than widen the page on mobile */
+  overflow-wrap: anywhere;
 }
 
 /* ----- code blocks (the hero element) ----- */
