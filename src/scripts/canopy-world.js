@@ -306,31 +306,73 @@ const shared = (key, make) => {
   return t;
 };
 
-/* forest floor: deeper mossy checker with leaf-litter speckles */
+/* forest floor DETAIL map: deliberately low-contrast (±8% luma) — tiling
+   is only visible when a feature is recognizable, so nothing here is. All
+   the actual art (patches, height/slope tints) lives in vertex colors,
+   which multiply with this map for free in MeshStandardMaterial. */
 function meadowTexture() {
   return shared('meadow', () => {
-    const t = 32;
+    const S = 256;
     const c = document.createElement('canvas');
-    c.width = c.height = t * 8;
+    c.width = c.height = S;
     const ctx = c.getContext('2d');
-    for (let y = 0; y < 8; y++)
-      for (let x = 0; x < 8; x++) {
-        const v = ((x + y) % 2 ? 0.92 : 1) * (0.94 + hash01(`m${x}:${y}`) * 0.12);
-        ctx.fillStyle = `rgb(${Math.round(112 * v)}, ${Math.round(172 * v)}, ${Math.round(98 * v)})`;
-        ctx.fillRect(x * t, y * t, t, t);
+    /* tileable value noise: wrapped lattice + smoothstep bilinear */
+    const lat = (n, i, j) => hash01(`g${n}:${((i % n) + n) % n}:${((j % n) + n) % n}`);
+    const val = (n, u, v) => {
+      const x = u * n;
+      const y = v * n;
+      const i = Math.floor(x);
+      const j = Math.floor(y);
+      const fx = x - i;
+      const fy = y - j;
+      const sx = fx * fx * (3 - 2 * fx);
+      const sy = fy * fy * (3 - 2 * fy);
+      const a = lat(n, i, j);
+      const b = lat(n, i + 1, j);
+      const d = lat(n, i, j + 1);
+      const e = lat(n, i + 1, j + 1);
+      return a + (b - a) * sx + (d - a) * sy + (a - b - d + e) * sx * sy;
+    };
+    const img = ctx.createImageData(S, S);
+    for (let p = 0, y = 0; y < S; y++)
+      for (let x = 0; x < S; x++, p += 4) {
+        const u = x / S;
+        const v = y / S;
+        const n = val(4, u, v) - 0.5 + (val(9, u, v) - 0.5) * 0.5 + (val(19, u, v) - 0.5) * 0.25;
+        const l = 1 + n * 0.13;
+        img.data[p] = Math.min(255, 127 * l);
+        img.data[p + 1] = Math.min(255, 174 * l);
+        img.data[p + 2] = Math.min(255, 82 * l);
+        img.data[p + 3] = 255;
       }
-    for (let i = 0; i < 26; i++) {
-      const x = hash01(`fx${i}`) * 256;
-      const y = hash01(`fy${i}`) * 256;
-      ctx.fillStyle = ['#f7e07a', '#caa86a', '#f0a8c0'][i % 3];
-      ctx.beginPath();
-      ctx.arc(x, y, 1.6, 0, Math.PI * 2);
-      ctx.fill();
+    ctx.putImageData(img, 0, 0);
+    /* blade strokes + speckles, drawn at the 4 wrap offsets to stay tileable */
+    ctx.lineWidth = 1.4;
+    for (let i = 0; i < 380; i++) {
+      const x = hash01(`bx${i}`) * S;
+      const y = hash01(`by${i}`) * S;
+      const ang = -Math.PI / 2 + (hash01(`ba${i}`) - 0.5) * 0.9;
+      const len = 3 + hash01(`bl${i}`) * 2.5;
+      ctx.strokeStyle = i % 2 ? 'rgba(95,148,71,0.1)' : 'rgba(163,198,110,0.1)';
+      for (const ox of [0, -S])
+        for (const oy of [0, -S]) {
+          ctx.beginPath();
+          ctx.moveTo(x + ox, y + oy);
+          ctx.lineTo(x + ox + Math.cos(ang) * len, y + oy + Math.sin(ang) * len);
+          ctx.stroke();
+        }
+    }
+    for (let i = 0; i < 60; i++) {
+      const x = hash01(`sx${i}`) * S;
+      const y = hash01(`sy${i}`) * S;
+      ctx.fillStyle = i % 2 ? 'rgba(196,201,106,0.16)' : 'rgba(77,125,60,0.16)';
+      for (const ox of [0, -S]) for (const oy of [0, -S]) ctx.fillRect(x + ox, y + oy, 1.6, 1.6);
     }
     const tex = new THREE.CanvasTexture(c);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(60, 60);
     tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
     return tex;
   });
 }
@@ -591,8 +633,8 @@ function makeAnimator(root, clips) {
 
 /* iPad gets the same legend as desktop — it just spells the touch binds */
 const HELP = coarse
-  ? 'stick runs · A jump · B charge · ⚔ attack · 🛡 hold to block · drag to look · tap the card to open'
-  : 'WASD run · space jump · click/F attack · RMB/C block · E cyclone · Q slam · shift charge · ↵ open · M sound';
+  ? 'stick runs · A jump · B charge · ⚔ attack · 🛡 hold to block · drag looks · pinch zooms · ⟲ if stuck'
+  : 'WASD run · mouse looks (esc frees it) · space jump · click/F attack · RMB/C block · E cyclone · Q slam · shift charge · R reset';
 
 function makeHud(powers, coins, stars, total) {
   const hud = document.createElement('div');
@@ -610,7 +652,7 @@ function makeHud(powers, coins, stars, total) {
       </div>
       <div class="cp-powers" data-cp-powers></div>
     </div>
-    <div class="cp-corner"><button type="button" data-cp-fx aria-label="Toggle fancy rendering"></button><button type="button" data-cp-mute aria-label="Toggle sound"></button></div>
+    <div class="cp-corner"><button type="button" data-cp-reset aria-label="Respawn" title="stuck? respawn">⟲ reset</button><button type="button" data-cp-fx aria-label="Toggle fancy rendering"></button><button type="button" data-cp-mute aria-label="Toggle sound"></button></div>
     <div class="cp-toasts" data-cp-toasts aria-live="polite"></div>
     <div class="cp-bossbar" data-cp-bossbar hidden><b data-cp-bossname></b><div class="cp-bar cp-bosshp"><i data-cp-bosshp></i></div></div>
     <div class="cp-course" data-cp-course hidden></div>
@@ -940,14 +982,91 @@ export function mount() {
     const rim = smoothstep(HUB_R - 4, HUB_R - 16, rr); // settle to 0 at the edge
     return Math.max(-1.2, h) * terrainFlat(x, z) * rim;
   }
+  /* slope at a point — epsilon at character-radius scale, or bumpy ground
+     gives flickering walkable verdicts right at the limit */
+  function terrainGrad(x, z) {
+    const e = 0.35;
+    const gx = (terrainH(x + e, z) - terrainH(x - e, z)) / (2 * e);
+    const gz = (terrainH(x, z + e) - terrainH(x, z - e)) / (2 * e);
+    return { gx, gz, ny: 1 / Math.sqrt(1 + gx * gx + gz * gz) };
+  }
+  const COS_MAX_SLOPE = Math.cos((50 * Math.PI) / 180); // walkable up to 50°
+
+  /* ----- ground color: the macro layer. Patches, height and slope tints
+     live in VERTEX colors (multiplied with the low-contrast detail map by
+     the standard material) — macro variation is what kills texture tiling.
+     One function feeds the disc, the tufts and the flowers, so ground
+     cover never floats on alien green. Tints are multipliers around 1. */
+  const wlat = (s, i, j) => hash01(`w${s}:${i}:${j}`);
+  function wnoise(x, z, wl, s) {
+    const u = x / wl;
+    const v = z / wl;
+    const i = Math.floor(u);
+    const j = Math.floor(v);
+    const fx = u - i;
+    const fy = v - j;
+    const sx = fx * fx * (3 - 2 * fx);
+    const sy = fy * fy * (3 - 2 * fy);
+    const a = wlat(s, i, j);
+    const b = wlat(s, i + 1, j);
+    const d = wlat(s, i, j + 1);
+    const e = wlat(s, i + 1, j + 1);
+    return a + (b - a) * sx + (d - a) * sy + (a - b - d + e) * sx * sy;
+  }
+  /* the drawn trail's own param, sampled fine, for the dirt halo */
+  const trailPts = [];
+  for (let i = 0; i <= posts.length; i += 0.2) {
+    const a = i * 0.55 + 0.1;
+    const r = Math.min(13 + i * 1.85, HUB_R - 14) - 3.4;
+    trailPts.push([Math.cos(a) * r, Math.sin(a) * r]);
+  }
+  const DIRT_TINT = [1.3, 0.82, 0.5];
+  function groundColor(x, z) {
+    /* warm/cool grass patches at two scales */
+    const n = (wnoise(x, z, 22, 'a') - 0.5) * 2 + (wnoise(x, z, 7, 'b') - 0.5) * 0.8;
+    const t = THREE.MathUtils.clamp(0.5 + n * 0.7, 0, 1);
+    let r = 0.84 + 0.3 * t;
+    let g = 0.99 + 0.06 * t;
+    let b = 0.99 - 0.15 * t;
+    /* drifting-cloud shade: two extra-large soft blotches of darker grass —
+       the big flattened wells sit inside one 22-unit patch otherwise */
+    const cloud = 1 - 0.08 * wnoise(x, z, 52, 'c');
+    r *= cloud;
+    g *= cloud;
+    b *= cloud;
+    /* valleys cool and damp, crests warm and dry */
+    const ht = smoothstep(-1.2, 3.4, terrainH(x, z));
+    r *= 0.88 + 0.22 * ht;
+    g *= 0.94 + 0.11 * ht;
+    b *= 1.02 - 0.12 * ht;
+    /* dirt bleeds through on steep faces — the threshold is dithered with
+       noise so it never reads as a clean contour line */
+    const steep = 1 - terrainGrad(x, z).ny;
+    let d = smoothstep(0.2, 0.36, steep + (wnoise(x, z, 1.4, 'd') - 0.5) * 0.16);
+    /* the sandy trail pre-warms the ground around it: the overlay edge and
+       this tint edge sit at different radii, so no single hard contour */
+    let trailD2 = Infinity;
+    for (const p of trailPts) {
+      const dd = (x - p[0]) * (x - p[0]) + (z - p[1]) * (z - p[1]);
+      if (dd < trailD2) trailD2 = dd;
+    }
+    d = Math.min(1, d + 0.4 * (1 - smoothstep(1.4, 4.4, Math.sqrt(trailD2))));
+    r += (DIRT_TINT[0] - r) * d;
+    g += (DIRT_TINT[1] - g) * d;
+    b += (DIRT_TINT[2] - b) * d;
+    /* per-spot jitter breaks any residual banding */
+    const j = 0.95 + wnoise(x, z, 0.9, 'j') * 0.1;
+    return [r * j, g * j, b * j];
+  }
 
   {
     /* the meadow disc: a rings × sectors grid displaced by terrainH (a
        cylinder cap has no interior vertices to displace) */
-    const RINGS = 44;
-    const SECTORS = 96;
+    const RINGS = 64;
+    const SECTORS = 128;
     const pos = [];
     const uv = [];
+    const col = [];
     const idx = [];
     for (let r = 0; r <= RINGS; r++) {
       const rad = (r / RINGS) * HUB_R;
@@ -957,6 +1076,7 @@ export function mount() {
         const z = Math.sin(a) * rad;
         pos.push(x, terrainH(x, z), z);
         uv.push((x / HUB_R) * 30 + 30, (z / HUB_R) * 30 + 30);
+        col.push(...groundColor(x, z));
       }
     }
     for (let r = 0; r < RINGS; r++)
@@ -968,6 +1088,7 @@ export function mount() {
     const gGeo = new THREE.BufferGeometry();
     gGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     gGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    gGeo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     gGeo.setIndex(idx);
     gGeo.computeVertexNormals();
     const groundTex = meadowTexture().clone();
@@ -976,7 +1097,7 @@ export function mount() {
     groundTex.needsUpdate = true;
     const ground = new THREE.Mesh(
       gGeo,
-      new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95 }),
+      new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95, vertexColors: true }),
     );
     ground.receiveShadow = true;
     scene.add(ground);
@@ -1180,21 +1301,51 @@ export function mount() {
     const UPY = new THREE.Vector3(0, 1, 0);
     const pos = new THREE.Vector3();
     const GN = coarse ? 250 : 500;
+    const trailD = (x, z) => {
+      let d2 = Infinity;
+      for (const p of trailPts) {
+        const dd = (x - p[0]) * (x - p[0]) + (z - p[1]) * (z - p[1]);
+        if (dd < d2) d2 = dd;
+      }
+      return Math.sqrt(d2);
+    };
+    const GBASE = new THREE.Color(0x7fae52); // the detail map's average green
+    const norm = new THREE.Vector3();
     const tufts = new THREE.InstancedMesh(tuftGeo, tuftMat, GN);
-    for (let i = 0; i < GN; i++) {
-      const a = hash01(`ga${i}`) * Math.PI * 2;
-      const r = 6 + hash01(`gr${i}`) * (HUB_R - 10);
-      const s = 0.8 + hash01(`gs${i}`) * 1.2;
-      q.setFromAxisAngle(UPY, hash01(`gq${i}`) * Math.PI);
+    /* never leave an instance slot unset — an unset slot renders at the
+       origin. Rejection sampling fills every slot from a longer candidate
+       stream: skip the trail core, favor warm patches (clumps read as
+       meadow; uniform scatter reads as particle system). */
+    for (let i = 0, cand = 0; i < GN; i++, cand++) {
+      let x = 0;
+      let z = 0;
+      for (; cand < 4000; cand++) {
+        const a = hash01(`ga${cand}`) * Math.PI * 2;
+        const r = 6 + hash01(`gr${cand}`) * (HUB_R - 10);
+        x = Math.cos(a) * r;
+        z = Math.sin(a) * r;
+        if (trailD(x, z) < 2) continue;
+        if (hash01(`gk${cand}`) < 0.25 + 0.75 * wnoise(x, z, 7, 'b')) break;
+      }
+      const s = 0.8 + hash01(`gs${cand}`) * 1.2;
+      /* root the tuft into the slope, not the horizon */
+      const gr = terrainGrad(x, z);
+      norm.set(-gr.gx, 1, -gr.gz).normalize();
+      q.setFromUnitVectors(UPY, norm);
       sc.set(s, s, s);
-      m4.compose(pos.set(Math.cos(a) * r, terrainH(Math.cos(a) * r, Math.sin(a) * r), Math.sin(a) * r), q, sc);
+      m4.compose(pos.set(x, terrainH(x, z), z), q, sc);
       tufts.setMatrixAt(i, m4);
-      cv.setHSL(0.3 + hash01(`gc${i}`) * 0.1, 0.5, 0.38 + hash01(`gl${i}`) * 0.12);
+      /* the same color function as the ground beneath — tufts grow OUT of
+         their patch instead of floating on it */
+      const [tr, tg, tb] = groundColor(x, z);
+      const lum = 0.92 + hash01(`gl${i}`) * 0.22;
+      cv.copy(GBASE);
+      cv.setRGB(cv.r * tr * lum, cv.g * tg * lum * 1.08, cv.b * tb * lum * 0.92);
       tufts.setColorAt(i, cv);
     }
     scene.add(tufts);
 
-    /* flowers: tiny crosses of petals */
+    /* flowers: tiny crosses of petals, biased into the cool damp patches */
     const petal = new THREE.SphereGeometry(0.12, 5, 4);
     petal.scale(1, 0.5, 1);
     const stemG = new THREE.CylinderGeometry(0.025, 0.025, 0.5, 4);
@@ -1204,13 +1355,23 @@ export function mount() {
     const flowerMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
     const FN = 300;
     const flowers = new THREE.InstancedMesh(flowerGeo, flowerMat, FN);
-    for (let i = 0; i < FN; i++) {
-      const a = hash01(`fa${i}`) * Math.PI * 2;
-      const r = 5 + hash01(`fr${i}`) * (HUB_R - 9);
-      m4.makeRotationY(hash01(`fq${i}`) * Math.PI);
-      m4.setPosition(Math.cos(a) * r, terrainH(Math.cos(a) * r, Math.sin(a) * r), Math.sin(a) * r);
+    for (let i = 0, cand = 0; i < FN; i++, cand++) {
+      let x = 0;
+      let z = 0;
+      for (; cand < 4000; cand++) {
+        const a = hash01(`fa${cand}`) * Math.PI * 2;
+        const r = 5 + hash01(`fr${cand}`) * (HUB_R - 9);
+        x = Math.cos(a) * r;
+        z = Math.sin(a) * r;
+        if (trailD(x, z) < 2.4) continue;
+        if (hash01(`fk${cand}`) < 0.3 + 0.7 * (1 - wnoise(x, z, 7, 'b'))) break;
+      }
+      m4.makeRotationY(hash01(`fq${cand}`) * Math.PI);
+      m4.setPosition(x, terrainH(x, z), z);
       flowers.setMatrixAt(i, m4);
-      cv.set([0xf7e07a, 0xf0f0f0, 0xf0a8c0, 0xb8a8f0][i % 4]);
+      /* white / coral / periwinkle — the periwinkle echoes the violet
+         shadow family — plus the odd straw-yellow */
+      cv.set([0xf5f2e6, 0xe8845f, 0x9d8fe0, 0xf7e07a][i % 4]);
       flowers.setColorAt(i, cv);
     }
     scene.add(flowers);
@@ -2546,6 +2707,10 @@ export function mount() {
   let camYaw = 0.6;
   let camPitch = 0.38;
   let camDist = 11;
+  let camDistT = 11; // wheel/pinch set the target; the boom eases toward it
+  let camPull = 0; // terrain pull-in: snaps in same-frame, eases back out
+  let pivotY = 0; // soft vertical pivot — jumps must not pump the horizon
+  let locked = false; // pointer-locked mouse-look (Genshin's captured cursor)
   let orbitIdleT = 99; // seconds since the player last orbited by hand
   const keys = { f: false, b: false, l: false, r: false, jump: false, dash: false, block: false };
   let nearChest = -1;
@@ -2583,6 +2748,7 @@ export function mount() {
     const at = inCourse >= 0 ? arenas[inCourse].spawn : SPAWN;
     player.position.copy(at);
     vel.set(0, 0, 0);
+    pivotY = at.y;
     audio.land();
   }
 
@@ -2606,6 +2772,7 @@ export function mount() {
     }
     vel.set(0, 0, 0);
     camYaw = facing + Math.PI;
+    pivotY = player.position.y; // no cross-map camera swoop
   }
 
   /* ----- input ----- */
@@ -2676,7 +2843,11 @@ export function mount() {
           return;
         }
         if (['m', 'M'].includes(e.key)) toggleMute();
-        else if (['f', 'F'].includes(e.key)) attackPress();
+        else if (['r', 'R'].includes(e.key)) {
+          /* stuck anywhere → back to safe ground, nothing lost */
+          respawn();
+          hud?.toast('⟲ back on your feet');
+        } else if (['f', 'F'].includes(e.key)) attackPress();
         else if (['e', 'E'].includes(e.key)) skillPress();
         else if (['q', 'Q'].includes(e.key)) ultPress();
         else if (e.key === 'Enter' && document.activeElement === document.body) {
@@ -2689,9 +2860,25 @@ export function mount() {
     );
     addEventListener('keyup', (e) => kset(e.key, false), { signal });
 
-    /* touch stick (left zone) */
+    /* touch stick (left zone) + touch orbit/pinch (everywhere else) */
     const stickEl = hud?.querySelector('[data-cp-stick]');
     const stickNub = stickEl?.querySelector('i');
+    const tdrags = new Map(); // non-stick touch pointers: 1 orbits, 2 pinch
+    let pinchBase = 0;
+    let pinchDist = 0;
+    /* Genshin's captured cursor: the click that ACQUIRES the lock is
+       swallowed; while locked, raw deltas orbit and click is the attack */
+    document.addEventListener(
+      'pointerlockchange',
+      () => {
+        locked = document.pointerLockElement === el;
+        if (!locked) {
+          keys.block = false;
+          drag.id = -1;
+        }
+      },
+      { signal },
+    );
     el.addEventListener(
       'pointerdown',
       (e) => {
@@ -2705,13 +2892,26 @@ export function mount() {
             stick.x = stick.y = 0;
             return;
           }
+          tdrags.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          if (tdrags.size === 2) {
+            const [a, b] = [...tdrags.values()];
+            pinchBase = Math.hypot(a.x - b.x, a.y - b.y);
+            pinchDist = camDistT;
+          }
         } else if (e.button === 2) {
           keys.block = true;
-        } else if (drag.id < 0) {
-          drag.id = e.pointerId;
-          drag.lx = e.clientX;
-          drag.ly = e.clientY;
-          drag.moved = 0;
+        } else if (locked) {
+          attackPress();
+        } else {
+          /* acquiring click — if the lock lands, the drag is dropped and
+             no attack fires; if it's denied, drag-orbit still works */
+          if (e.pointerType === 'mouse') el.requestPointerLock?.();
+          if (drag.id < 0) {
+            drag.id = e.pointerId;
+            drag.lx = e.clientX;
+            drag.ly = e.clientY;
+            drag.moved = 0;
+          }
         }
       },
       { signal },
@@ -2719,6 +2919,15 @@ export function mount() {
     el.addEventListener(
       'pointermove',
       (e) => {
+        if (locked && e.pointerType === 'mouse') {
+          /* clientX freezes under pointer lock — raw deltas only */
+          if (e.movementX || e.movementY) {
+            orbitIdleT = 0;
+            camYaw -= e.movementX * 0.0024;
+            camPitch = THREE.MathUtils.clamp(camPitch + e.movementY * 0.0017, -0.26, 1.2);
+          }
+          return;
+        }
         if (e.pointerId === stick.id) {
           const dx = e.clientX - stick.x0;
           const dy = e.clientY - stick.y0;
@@ -2733,11 +2942,27 @@ export function mount() {
             stickEl.style.top = `${stick.y0}px`;
           }
           if (stick.live && stickNub) stickNub.style.transform = `translate(${dx * k}px, ${dy * k}px)`;
+        } else if (tdrags.has(e.pointerId)) {
+          const t = tdrags.get(e.pointerId);
+          if (tdrags.size >= 2) {
+            t.x = e.clientX;
+            t.y = e.clientY;
+            const [a, b] = [...tdrags.values()];
+            const d = Math.hypot(a.x - b.x, a.y - b.y);
+            if (pinchBase > 0 && d > 0) camDistT = THREE.MathUtils.clamp((pinchDist * pinchBase) / d, 3.2, 20);
+            orbitIdleT = 0;
+          } else {
+            orbitIdleT = 0;
+            camYaw -= (e.clientX - t.x) * 0.006;
+            camPitch = THREE.MathUtils.clamp(camPitch + (e.clientY - t.y) * 0.004, -0.26, 1.2);
+            t.x = e.clientX;
+            t.y = e.clientY;
+          }
         } else if (e.pointerId === drag.id) {
           drag.moved += Math.abs(e.clientX - drag.lx) + Math.abs(e.clientY - drag.ly);
           orbitIdleT = 0;
           camYaw -= (e.clientX - drag.lx) * 0.006;
-          camPitch = THREE.MathUtils.clamp(camPitch + (e.clientY - drag.ly) * 0.004, 0.08, 1.1);
+          camPitch = THREE.MathUtils.clamp(camPitch + (e.clientY - drag.ly) * 0.004, -0.26, 1.2);
           drag.lx = e.clientX;
           drag.ly = e.clientY;
         }
@@ -2752,10 +2977,12 @@ export function mount() {
         if (stickEl) stickEl.hidden = true;
         if (stickNub) stickNub.style.transform = '';
       }
+      tdrags.delete(e.pointerId);
+      if (tdrags.size < 2) pinchBase = 0;
       if (e.button === 2) keys.block = false;
       if (e.pointerId === drag.id) {
         /* a clean click (no orbit) is a swing — Genshin's left hand */
-        if (e.pointerType !== 'touch' && e.button === 0 && drag.moved < 6) attackPress();
+        if (e.pointerType !== 'touch' && e.button === 0 && drag.moved < 6 && !locked) attackPress();
         drag.id = -1;
       }
     };
@@ -2766,7 +2993,7 @@ export function mount() {
       'wheel',
       (e) => {
         e.preventDefault();
-        camDist = THREE.MathUtils.clamp(camDist + e.deltaY * 0.01, 3.2, 20);
+        camDistT = THREE.MathUtils.clamp(camDistT + e.deltaY * 0.01, 3.2, 20);
       },
       { passive: false, signal },
     );
@@ -2816,6 +3043,14 @@ export function mount() {
     );
     hud?.querySelector('[data-cp-mute]')?.addEventListener('click', toggleMute, { signal });
     hud?.querySelector('[data-cp-fx]')?.addEventListener('click', toggleFx, { signal });
+    hud?.querySelector('[data-cp-reset]')?.addEventListener(
+      'click',
+      () => {
+        respawn();
+        hud?.toast('⟲ back on your feet');
+      },
+      { signal },
+    );
     syncMute();
     syncFx();
   }
@@ -3048,7 +3283,9 @@ export function mount() {
     const moveMul = combat.ultT > 0 ? 0.06 : combat.atkT > 0 ? 0.22 : combat.skillT > 0 ? 0.45 : combat.blocking ? 0.32 : 1;
 
     const accel = onGround ? 70 : 26;
-    const target = maxRun() * (dashT > 0 ? 2.1 : 1) * moveMul;
+    /* partial stick deflection walks — keyboard always runs */
+    const throttle = stick.id >= 0 ? Math.max(0.35, Math.min(1, ilen)) : 1;
+    const target = maxRun() * (dashT > 0 ? 2.1 : 1) * moveMul * throttle;
     if ((ilen > 0.05 || dashT > 0) && moveMul > 0.05) {
       vel.x = THREE.MathUtils.lerp(vel.x, wx * target, 1 - Math.exp((-dt * accel) / Math.max(target, 1)));
       vel.z = THREE.MathUtils.lerp(vel.z, wz * target, 1 - Math.exp((-dt * accel) / Math.max(target, 1)));
@@ -3116,9 +3353,40 @@ export function mount() {
     }
 
     const prevY = player.position.y;
-    const g = findGround(prevY); // sweep from where the fall STARTED
+    const wasGround = onGround;
+    /* while walking, ground up to a step above the feet is still ground —
+       walkability is the SLOPE's property, never the per-frame rise (a
+       fixed rise tolerance fails as speed × dt grows and the player runs
+       INSIDE the hill). Airborne keeps the strict landing sweep. */
+    const g = findGround(prevY + (wasGround ? 0.56 : 0));
     player.position.y += vel.y * dt;
-    if (vel.y <= 0 && g.top > -Infinity && prevY >= g.top - 0.4 && player.position.y <= g.top) {
+    /* snap-down reach scales with how far downhill one frame can travel
+       (speed·dt·tan(maxSlope)) so crests don't bunny-hop at any frame rate */
+    const snapDown = wasGround ? Math.hypot(vel.x, vel.z) * dt * 1.2 + 0.3 : 0;
+    let landed =
+      vel.y <= 0 && g.top > -Infinity && prevY >= g.top - (wasGround ? 0.56 : 0.4) && player.position.y <= g.top + snapDown;
+    /* steep terrain refuses the climb: kill the uphill velocity component
+       and slide along the contour instead of entering the hillside */
+    if (landed && g.box?.terrain && g.top > prevY + 0.03) {
+      const gr = terrainGrad(player.position.x, player.position.z);
+      if (gr.ny < COS_MAX_SLOPE) {
+        const gl = Math.hypot(gr.gx, gr.gz) || 1;
+        const ux = gr.gx / gl;
+        const uz = gr.gz / gl;
+        const updot = vel.x * ux + vel.z * uz;
+        if (updot > 0) {
+          vel.x -= ux * updot;
+          vel.z -= uz * updot;
+        }
+        /* back out of the slope by the horizontal penetration */
+        const pen = (g.top - prevY) / gl + 0.02;
+        player.position.x -= ux * pen;
+        player.position.z -= uz * pen;
+        g.top = findGround(prevY + 0.56).top;
+        landed = g.top > -Infinity && g.top <= prevY + 0.56;
+      }
+    }
+    if (landed) {
       player.position.y = g.top;
       if (!onGround) {
         if (vel.y < -18) squash = 1;
@@ -3135,6 +3403,17 @@ export function mount() {
       if (onGround && vel.y <= 0) coyote = 0.12;
       onGround = false;
       groundBox = null;
+    }
+
+    /* below the heightfield is ALWAYS invalid (no overhangs exist) — one
+       unconditional clamp makes any logic slip above self-healing */
+    if (inCourse < 0 && Math.hypot(player.position.x, player.position.z) < HUB_R) {
+      const th = terrainH(player.position.x, player.position.z);
+      if (player.position.y < th) {
+        player.position.y = th;
+        vel.y = Math.max(vel.y, 0);
+        onGround = true;
+      }
     }
 
     /* fell off the world */
@@ -3289,7 +3568,14 @@ export function mount() {
     }
 
     /* --- player visuals: clip machine, squash, blob shadow --- */
-    body.rotation.y = THREE.MathUtils.lerp(body.rotation.y, facing, 1 - Math.exp(-dt * 12));
+    /* shortest-arc turn — a plain lerp spins the long way through ±π and
+       180° reversals read as a pirouette */
+    let dFace = facing - body.rotation.y;
+    while (dFace > Math.PI) dFace -= Math.PI * 2;
+    while (dFace < -Math.PI) dFace += Math.PI * 2;
+    body.rotation.y += dFace * (1 - Math.exp(-dt * 13));
+    if (body.rotation.y > Math.PI) body.rotation.y -= Math.PI * 2;
+    else if (body.rotation.y < -Math.PI) body.rotation.y += Math.PI * 2;
     squash *= Math.exp(-dt * 7);
     body.scale.y = 1 - squash * 0.3;
     body.scale.x = body.scale.z = 1 + squash * 0.18;
@@ -3385,34 +3671,55 @@ export function mount() {
     sun.position.set(sx + SUN_OFF.x, SUN_OFF.y, sz + SUN_OFF.z);
     sun.target.position.set(sx, 0, sz);
 
-    /* --- camera: Genshin-style — drag orbits, and while you run the
-       camera gently settles in behind you; the wheel zooms from
-       over-the-shoulder to wide --- */
+    /* --- camera: Genshin grammar — mouse-look (or drag/touch) orbits 1:1,
+       the boom eases between zoom stops, and while you run the camera
+       LAZILY settles behind you: yaw gain scales with sin(offset), so it
+       never micro-corrects when already behind and never fights you when
+       you run straight at it. Pitch only settles toward its default. --- */
     shake = Math.max(0, shake - dt * 1.6);
     orbitIdleT += dt;
     if (orbitIdleT > 1.6 && spd > 2.5 && !reduced) {
       let dA = facing + Math.PI - camYaw;
       while (dA > Math.PI) dA -= Math.PI * 2;
       while (dA < -Math.PI) dA += Math.PI * 2;
-      camYaw += dA * (1 - Math.exp(-dt * 1.1 * Math.min(1, spd / 9)));
+      if (Math.abs(dA) < Math.PI * 0.67) {
+        camYaw += Math.sin(dA) * dt * 1.5 * Math.min(1, spd / 9);
+        camPitch += (0.38 - camPitch) * (1 - Math.exp(-dt * 0.3));
+      }
     }
-    const cy = Math.sin(camPitch) * camDist;
-    const ch = Math.cos(camPitch) * camDist;
-    tmpV2.set(
-      player.position.x + Math.sin(camYaw) * ch,
-      player.position.y + cy + 1.2,
-      player.position.z + Math.cos(camYaw) * ch,
-    );
-    /* hills must not swallow the camera */
-    tmpV2.y = Math.max(tmpV2.y, terrainH(tmpV2.x, tmpV2.z) + 0.6);
-    camera.position.lerp(tmpV2, reduced ? 1 : 1 - Math.exp(-dt * 6));
+    camDist += (camDistT - camDist) * (reduced ? 1 : 1 - Math.exp(-dt * 10));
+    /* pivot: rigid horizontally, soft vertically — jumps don't pump the horizon */
+    pivotY += (player.position.y - pivotY) * (reduced ? 1 : 1 - Math.exp(-dt * 7));
+    const headX = player.position.x;
+    const headY = pivotY + 1.45;
+    const headZ = player.position.z;
+    const dirX = Math.sin(camYaw) * Math.cos(camPitch);
+    const dirY = Math.sin(camPitch);
+    const dirZ = Math.cos(camYaw) * Math.cos(camPitch);
+    /* terrain occlusion: march the boom — pull in the SAME frame a hill
+       cuts the line, ease back out so leaving it never pops */
+    let clear = camDist;
+    for (let i = 1; i <= 12; i++) {
+      const t = (i / 12) * camDist;
+      if (headY + dirY * t < terrainH(headX + dirX * t, headZ + dirZ * t) + 0.35) {
+        clear = Math.max(0.8, t - 0.45);
+        break;
+      }
+    }
+    const pull = camDist - clear;
+    camPull = pull > camPull ? pull : camPull + (pull - camPull) * (1 - Math.exp(-dt * 2.2));
+    const eff = Math.max(0.8, camDist - camPull);
+    camera.position.set(headX + dirX * eff, headY + dirY * eff, headZ + dirZ * eff);
+    /* backstop: never under the heightfield no matter what */
+    camera.position.y = Math.max(camera.position.y, terrainH(camera.position.x, camera.position.z) + 0.3);
     if (shake > 0.01 && !reduced) {
       camera.position.x += (Math.random() - 0.5) * shake * 0.5;
       camera.position.y += (Math.random() - 0.5) * shake * 0.5;
     }
     camLook.copy(player.position);
+    camLook.y = pivotY;
     /* close zoom reads over the shoulder, not at the ankles */
-    camLook.y += THREE.MathUtils.lerp(1.55, 1.3, Math.min(1, camDist / 14));
+    camLook.y += THREE.MathUtils.lerp(1.55, 1.3, Math.min(1, eff / 14));
     camera.lookAt(camLook);
 
     /* --- HUD tick --- */
@@ -3505,11 +3812,12 @@ export function mount() {
         hand.getWorldScale(handScale);
         const wrap = new THREE.Group();
         wrap.scale.set(1 / handScale.x, 1 / handScale.y, 1 / handScale.z);
-        /* shaft along the fist's Z, twisted back so the blade rests past
-           the shoulder in the combat stance instead of through the torso —
-           swings still arc it out front */
-        wrap.rotation.set(-0.45, 0, Math.PI / 2);
-        wrap.position.set(0, 0.07, 0.05);
+        /* solved analytically against the idle pose (not hand-tuned): the
+           shaft maps to character-space (0.45, 0.78, -0.45) — blade head
+           up over the right shoulder, a rested greataxe. Re-derive with
+           /tmp-style solver via the __cw hook if the rig ever changes. */
+        wrap.rotation.set(2.328, 0.615, 0.272);
+        wrap.position.set(0.02, 0.06, 0.08);
         wrap.add(assets.axe);
         hand.add(wrap);
         /* grip tuning + scene probing hook for headless QA — inert unless
@@ -3523,6 +3831,7 @@ export function mount() {
               hero: assets.hero.scene,
               foes,
               player,
+              terrainH,
               damageFoe,
               pick: (nx, ny) => {
                 const rc = new THREE.Raycaster();

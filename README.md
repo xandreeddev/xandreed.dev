@@ -81,7 +81,13 @@ cyclone skill at 3, the ground-slam ultimate at 6, berserk at 10).
   chains on click/`F`, hold-to-block (`RMB`/`C`) that eats frontal hits and
   feeds rage, `E` cyclone on cooldown, `Q` rage-fueled ground slam, `shift`
   charge — plus coyote time, jump buffering and variable jump height
-  underneath. Touch gets a stick and a six-button cluster.
+  underneath. Touch gets a stick, drag-to-orbit, pinch zoom and a
+  six-button cluster.
+- A Genshin-grammar camera: click captures the mouse and you steer the
+  view freely (esc frees it, click swings the axe), the camera settles in
+  lazily behind you as you run, the wheel zooms from over-the-shoulder to
+  wide, and hills push the boom in instead of swallowing it. The meadow
+  itself rolls — slopes are walkable to 50°, steeper faces shrug you off.
 - Gremlins prowl their camps and drop coins; three mossy boss gates warp to
   forest-clearing arenas where an ogre (Mossback, Old Knucklebark, the
   Hollow King) guards a star — taunt intro, swing combos, dodge-the-ring
@@ -118,6 +124,9 @@ them oldest → newest.
   into the cage: three interceptor waves, then the warden). All scale with a
   persistent run level — win anywhere and every portal levels up.
 - **Sound** — every effect synthesized in WebAudio, zero assets. `M` mutes.
+- **Stuck?** — `R` (or the `⟲ reset` chip) recovers the ship anywhere, and
+  bails a portal run back to the overworld. Same escape hatch in all three
+  game styles.
 
 Ship state and score survive article round-trips. The world reads the post
 list straight from the DOM, mounts and unmounts live with the switcher, and

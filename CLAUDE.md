@@ -233,9 +233,36 @@ action-adventure (TERA-berserker kit on a platformer base):
   terrainH); platforms never rotate; movers carry the player (`groundBox`).
   Jump feel: coyote time + jump buffering + variable height. Don't "fix"
   those as bugs.
-- Camera is Genshin-grammar: drag orbits, wheel zooms 3.2–20 (close reads
-  over-the-shoulder), and while running the yaw eases in behind the player
-  unless the player orbited in the last ~1.6s (`orbitIdleT`).
+- Grounded movement FOLLOWS the heightfield: walkability is the slope's
+  property (`terrainGrad`, walkable to 50°), never the per-frame rise — a
+  fixed rise tolerance fails as speed×dt grows and the player runs inside
+  the hill. Too steep kills the uphill velocity component and slides along
+  the contour; snap-down scales with speed·dt·tan(slope) so crests don't
+  bunny-hop; and one unconditional clamp (y < terrainH is always invalid —
+  no overhangs exist) makes any future logic slip self-healing.
+- Ground look is macro × micro: `groundColor(x,z)` bakes warm/cool patches,
+  height/slope/trail-halo tints and cloud shade into the disc's VERTEX
+  colors (and the tufts' `instanceColor` — same function, so grass never
+  floats on alien green); `meadowTexture()` is only a deliberately
+  low-contrast (±8% luma) tileable detail map. Macro variation is what
+  kills tiling; don't move art into the repeating map.
+- Camera is Genshin-grammar, researched against the real thing: desktop is
+  pointer-lock mouse-look (the click that ACQUIRES the lock is swallowed —
+  never an attack; while locked, click attacks and esc frees the cursor),
+  touch is drag-anywhere-orbit + pinch zoom alongside the stick. Wheel sets
+  `camDistT`, the boom eases toward it; auto-follow is lazy
+  (`sin(offset)`-scaled yaw gain, dead above ~120° so running at the camera
+  never fights you, idle ~1.6s `orbitIdleT`); `pivotY` smooths vertical so
+  jumps don't pump the horizon; terrain occlusion marches the boom —
+  pull-in is same-frame, pull-out eased. Hero turn is shortest-arc
+  (a plain lerp pirouettes through ±π on 180° reversals).
+- The axe grip wrap rotation was SOLVED analytically against the idle pose
+  (map axe-local +Y to character-space `(0.45, 0.78, -0.45)` via the hand
+  bone's world quaternion), not hand-tuned — re-derive through the `__cw`
+  hook if the rig or clips change; blind euler sweeps don't converge.
+- All three worlds have a stuck-escape: `R` + a `⟲ reset` corner chip
+  (canopy → respawn, sodium → `resetToRoad`, vector → `resetShip`, which
+  bails a live run via `endRun(false)`). Keep them when reworking HUDs.
 - Anything transparent draped over terrain (the trail/contact-shadow
   overlay, chest glow beams) carries `userData.gtaoSkip` — the GTAO patch
   parks those alongside sprites, or the AO composite paints everything
