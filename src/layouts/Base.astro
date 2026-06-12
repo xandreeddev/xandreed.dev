@@ -248,10 +248,14 @@ const STYLES = [
       let world: { unmount: () => void } | null = null;
       let owner: string | null = null;
       let loading = false;
+      /* a world whose mount throws must never auto-retry: the swallowed
+         error plus the tail re-sync would loop mounts forever, leaking one
+         WebGL context per attempt */
+      const failed = new Set<string>();
       const syncWorld = async () => {
         if (loading) return;
         const style = document.documentElement.dataset.style ?? '';
-        const want = WORLDS[style] ? style : null;
+        const want = WORLDS[style] && !failed.has(style) ? style : null;
         if (world && owner !== want) {
           world.unmount();
           world = null;
@@ -265,8 +269,10 @@ const STYLES = [
               world = mod.mount();
               owner = want;
             }
-          } catch {
+          } catch (err) {
             /* no WebGL / load failure: the CSS alone is a complete fallback */
+            failed.add(want);
+            console.error(`[world] ${want} failed to mount:`, err);
           }
           loading = false;
           syncWorld(); // the style may have changed while the chunk loaded

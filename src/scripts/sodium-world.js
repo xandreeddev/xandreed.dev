@@ -28,6 +28,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Water } from 'three/addons/objects/Water.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 const NIGHT = 0x10142e;
 const SODIUM = 0xffb45e;
@@ -78,13 +79,21 @@ const store = {
   },
 };
 
-const hash01 = (s) => {
+const hash32 = (s) => {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
-  return (h >>> 0) / 4294967296;
+  return h >>> 0;
+};
+const hash01 = (s) => hash32(s) / 4294967296;
+/* deterministic PRNG for the seeded stunt strips */
+const mulberry = (seed) => () => {
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 
 const slugOf = (href) => href?.match(/\/posts\/([^/]+)\/?/)?.[1] ?? null;
@@ -355,6 +364,54 @@ function groundTileTexture() {
   });
 }
 
+/* warning chevrons for the ramp faces */
+function chevronTexture() {
+  return shared('chevron', () => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#e8dcc2';
+    ctx.fillRect(0, 0, 128, 128);
+    ctx.fillStyle = '#d84b58';
+    for (let i = -1; i < 4; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * 42, 0);
+      ctx.lineTo(i * 42 + 21, 0);
+      ctx.lineTo(i * 42 + 21 + 42, 128);
+      ctx.lineTo(i * 42 + 42, 128);
+      ctx.closePath();
+      ctx.fill();
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  });
+}
+
+/* a jump ramp: slope up +z, vertical drop at the far end */
+function wedgeGeometry(w, h, len) {
+  const hw = w / 2;
+  const v = [
+    /* slope */
+    -hw, 0, 0, hw, h, len, hw, 0, 0,
+    -hw, 0, 0, -hw, h, len, hw, h, len,
+    /* back */
+    -hw, h, len, hw, 0, len, hw, h, len,
+    -hw, h, len, -hw, 0, len, hw, 0, len,
+    /* sides */
+    -hw, 0, 0, -hw, 0, len, -hw, h, len,
+    hw, 0, 0, hw, h, len, hw, 0, len,
+  ];
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  const uv = [];
+  for (let i = 0; i < v.length; i += 3) uv.push((v[i] + hw) / w, v[i + 2] / len);
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.computeVertexNormals();
+  return g;
+}
+
 /* tileable asphalt roughness: smooth noise so the wet-road sheen breaks up
    into patches instead of one uniform plastic gloss */
 function asphaltRoughnessTexture() {
@@ -564,10 +621,11 @@ export function mount() {
   const found = store.found();
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, coarse ? 1.4 : 1.75));
+  renderer.setPixelRatio(Math.min(devicePixelRatio, coarse ? 1.3 : 1.5));
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  /* PCF honors shadow.radius — the soft penumbra without VSM's blur cost */
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.22;
   renderer.domElement.className = 'sodium-canvas';
@@ -724,10 +782,12 @@ export function mount() {
   /* hemisphere ground bounce leans warm — the sodium road kicks light
      back up, the cheapest GI there is. The sky side is a strong toy-night
      blue: everything must stay readable, race2-style */
-  scene.add(new THREE.HemisphereLight(0x4456b8, 0x241a36, 1.35));
+  scene.add(new THREE.HemisphereLight(0x4456b8, 0x241a36, 1.0));
   const moon = new THREE.DirectionalLight(0xa8c0ee, 1.9);
   moon.castShadow = true;
-  moon.shadow.mapSize.setScalar(coarse ? 1024 : 4096);
+  /* 2048 + VSM blur beats 4096 + hard PCF — the blur pass is per-frame */
+  moon.shadow.mapSize.setScalar(coarse ? 1024 : 2048);
+  moon.shadow.radius = 14;
   moon.shadow.camera.left = -70;
   moon.shadow.camera.right = 70;
   moon.shadow.camera.top = 70;
@@ -741,6 +801,8 @@ export function mount() {
 
   /* static obstacles the car can hit: { x, z, r } */
   const colliders = [];
+  /* every streetlight's point light — only the nearest two stay live */
+  const lampLights = [];
 
   /* ----- ground: vertex-noise plain ----- */
 
@@ -894,22 +956,18 @@ export function mount() {
 
   {
     const poleMat = new THREE.MeshStandardMaterial({ color: 0x39404e, roughness: 0.6, metalness: 0.5 });
-    const headMat = new THREE.MeshStandardMaterial({
-      color: 0x553311,
-      emissive: SODIUM,
-      emissiveIntensity: 2.4,
-    });
-    const coneMat = new THREE.MeshBasicMaterial({
-      color: SODIUM,
-      transparent: true,
-      opacity: 0.05,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * Math.PI * 2 + 0.13;
+    /* REAL light at every lamp — no additive cones, no fake pools: the
+       point lights land on the road, the grass, the car, the props.
+       Every third lamp runs pink, straight from the reference. Forward
+       rendering pays per light per fragment, so only the nearest two are
+       live at any moment (their pools don't reach further anyway) — the
+       count must stay constant or three recompiles every program. */
+    const lampCount = coarse ? 8 : 12;
+    for (let i = 0; i < lampCount; i++) {
+      const a = (i / lampCount) * Math.PI * 2 + 0.13;
       const side = i % 2 ? 1 : -1;
+      const pink = i % 3 === 2;
+      const lampColor = pink ? 0xff6ab8 : SODIUM;
       const r = ROAD_R + side * (ROAD_W + 1.5);
       const g = new THREE.Group();
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 7.5, 8), poleMat);
@@ -917,30 +975,29 @@ export function mount() {
       pole.castShadow = true;
       const arm = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 2.4), poleMat);
       arm.position.set(0, 7.4, -side * 1.2);
-      const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.9), headMat);
-      head.position.set(0, 7.3, -side * 2.2);
-      const cone = new THREE.Mesh(new THREE.ConeGeometry(3.6, 7.2, 16, 1, true), coneMat);
-      cone.position.set(0, 3.7, -side * 2.2);
-      /* the pool of sodium on the tarmac — the cone alone reads as haze,
-         the road needs the light to land somewhere */
-      const pool = new THREE.Mesh(
-        new THREE.PlaneGeometry(9.5, 9.5),
-        new THREE.MeshBasicMaterial({
-          map: glowTexture('#ffb45e'),
-          transparent: true,
-          opacity: 0.22,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
+      const head = new THREE.Mesh(
+        new THREE.BoxGeometry(0.5, 0.18, 0.9),
+        new THREE.MeshStandardMaterial({
+          color: 0x553311,
+          emissive: lampColor,
+          emissiveIntensity: 2.6,
         }),
       );
-      pool.rotation.x = -Math.PI / 2;
-      pool.position.set(0, 0.06, -side * 2.2);
-      g.add(pole, arm, head, cone, pool);
+      head.position.set(0, 7.3, -side * 2.2);
+      const light = new THREE.PointLight(lampColor, pink ? 150 : 190, 34, 2);
+      light.position.set(0, 7.1, -side * 2.2);
+      light.visible = false; // the culler below turns the nearest ones on
+      g.add(pole, arm, head, light);
       g.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
       g.lookAt(0, 0, 0);
       scene.add(g);
+      lampLights.push({ light, x: g.position.x, z: g.position.z });
       colliders.push({ x: g.position.x, z: g.position.z, r: 0.7 });
     }
+    /* a cold counterweight: moonlight pooling over the lake */
+    const lakeGlow = new THREE.PointLight(0x6fd8ff, 220, 130, 2);
+    lakeGlow.position.set(0, 14, 0);
+    scene.add(lakeGlow);
   }
 
   /* ----- trees: instanced, shadowed ----- */
@@ -1194,29 +1251,41 @@ export function mount() {
       emissiveIntensity: 0.5,
     });
 
-    /* tub + hood + grille */
-    const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.78, 3.9), paint);
-    chassis.position.y = 0.78;
-    const hood = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.16, 1.15), paint);
-    hood.position.set(0, 1.22, 1.25);
-    const grille = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.34, 0.1), cream);
-    grille.position.set(0, 0.92, 1.98);
-    /* cabin: upright windshield + glasshouse + cream roof */
-    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.84, 0.62, 1.9), glass);
-    cabin.position.set(0, 1.46, -0.5);
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.16, 2.1), paint);
-    roof.position.set(0, 1.84, -0.5);
-    /* roof rack: cream rails — pure toy */
+    /* tub + hood + grille — rounded geometry so the edges catch the lamp
+       light like molded plastic, not CAD boxes */
+    const chassis = new THREE.Mesh(new RoundedBoxGeometry(2.1, 0.82, 3.95, 4, 0.18), paint);
+    chassis.position.y = 0.8;
+    const hood = new THREE.Mesh(new RoundedBoxGeometry(1.72, 0.2, 1.2, 3, 0.08), paint);
+    hood.position.set(0, 1.24, 1.25);
+    const grille = new THREE.Mesh(new RoundedBoxGeometry(1.7, 0.36, 0.14, 2, 0.06), cream);
+    grille.position.set(0, 0.94, 1.99);
+    /* cabin: glasshouse + rounded roof */
+    const cabin = new THREE.Mesh(new RoundedBoxGeometry(1.84, 0.64, 1.9, 3, 0.14), glass);
+    cabin.position.set(0, 1.48, -0.5);
+    const roof = new THREE.Mesh(new RoundedBoxGeometry(2.02, 0.18, 2.12, 3, 0.09), paint);
+    roof.position.set(0, 1.86, -0.5);
+    /* roof rack + a four-pod light bar on the leading edge */
     const rackParts = [];
     for (const sx of [-0.8, 0.8]) {
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, 1.9), cream);
-      rail.position.set(sx, 1.99, -0.5);
+      const rail = new THREE.Mesh(new RoundedBoxGeometry(0.12, 0.16, 1.9, 2, 0.05), cream);
+      rail.position.set(sx, 2.02, -0.5);
       rackParts.push(rail);
     }
     for (const sz of [-1.25, -0.5, 0.25]) {
-      const rung = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.08, 0.1), cream);
-      rung.position.set(0, 1.99, sz);
+      const rung = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.08, 0.12), cream);
+      rung.position.set(0, 2.02, sz);
       rackParts.push(rung);
+    }
+    const podMat = new THREE.MeshStandardMaterial({
+      color: 0x445566,
+      emissive: 0xfff2cf,
+      emissiveIntensity: 2.2,
+    });
+    for (const sx of [-0.6, -0.2, 0.2, 0.6]) {
+      const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.12, 8), podMat);
+      pod.rotation.x = Math.PI / 2;
+      pod.position.set(sx, 2.06, 0.42);
+      rackParts.push(pod);
     }
     /* fenders over each wheel */
     const fenders = [];
@@ -1226,27 +1295,45 @@ export function mount() {
       [-1.05, -1.32],
       [1.05, -1.32],
     ]) {
-      const f = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.22, 1.25), trim);
-      f.position.set(sx, 1.0, sz);
+      const f = new THREE.Mesh(new RoundedBoxGeometry(0.36, 0.26, 1.3, 2, 0.1), trim);
+      f.position.set(sx, 1.02, sz);
       fenders.push(f);
     }
+    /* side steps under the doors */
+    for (const sx of [-1.08, 1.08]) {
+      const step = new THREE.Mesh(new RoundedBoxGeometry(0.24, 0.12, 1.3, 2, 0.05), cream);
+      step.position.set(sx, 0.42, 0);
+      fenders.push(step);
+    }
+    /* mirrors on the A-pillars */
+    for (const sx of [-1.0, 1.0]) {
+      const mirror = new THREE.Mesh(new RoundedBoxGeometry(0.16, 0.22, 0.1, 2, 0.04), trim);
+      mirror.position.set(sx, 1.52, 0.42);
+      fenders.push(mirror);
+    }
     /* bumpers */
-    const bumperF = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.22, 0.3), cream);
-    bumperF.position.set(0, 0.5, 2.05);
-    const bumperB = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.22, 0.3), cream);
-    bumperB.position.set(0, 0.5, -2.05);
-    /* spare on the tailgate */
-    const spare = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.24, 14), trim);
+    const bumperF = new THREE.Mesh(new RoundedBoxGeometry(2.2, 0.26, 0.34, 2, 0.1), cream);
+    bumperF.position.set(0, 0.5, 2.06);
+    const bumperB = new THREE.Mesh(new RoundedBoxGeometry(2.2, 0.26, 0.34, 2, 0.1), cream);
+    bumperB.position.set(0, 0.5, -2.06);
+    /* spare on the tailgate + exhaust */
+    const spare = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.26, 16), trim);
     spare.rotation.x = Math.PI / 2;
-    spare.position.set(0, 1.0, -2.08);
+    spare.position.set(0, 1.02, -2.1);
+    const spareHub = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.3, 10), cream);
+    spareHub.rotation.x = Math.PI / 2;
+    spareHub.position.set(0, 1.02, -2.1);
+    const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.3, 8), trim);
+    exhaust.rotation.x = Math.PI / 2;
+    exhaust.position.set(0.7, 0.34, -2.0);
     /* whip antenna */
     const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.035, 1.1, 5), trim);
-    antenna.position.set(-0.9, 1.6, -1.6);
+    antenna.position.set(-0.9, 1.62, -1.6);
     antenna.rotation.x = -0.28;
 
     const solid = [chassis, hood, cabin, roof, grille, bumperF, bumperB, spare, ...fenders];
     for (const m of solid) m.castShadow = m.receiveShadow = true;
-    body.add(...solid, ...rackParts, antenna);
+    body.add(...solid, spareHub, exhaust, ...rackParts, antenna);
 
     /* round headlights on the grille */
     const lampMat = new THREE.MeshStandardMaterial({ color: 0x445566, emissive: 0xfff2cf, emissiveIntensity: 2.8 });
@@ -1392,29 +1479,70 @@ export function mount() {
   /* ----- knockables: pin clusters + the name in letters, toy physics ----- */
 
   const props = [];
+  const ramps = []; // { x, z, fx, fz, rx, rz, len, h, w } — jump physics
+  const coneSpots = []; // resting cones: one InstancedMesh, knocked → real prop
+  let coneInst = null;
+  let coneGeoShared = null;
+  let coneMatShared = null;
   let pinsDown = 0;
   let pinsTotal = 0;
   const propQ = new THREE.Quaternion();
   const propV = new THREE.Vector3();
+  const coneM4 = new THREE.Matrix4();
+
+  /* shared impulse: pins, cones and letters all take the hit the same way */
+  function knockProp(p, dx, dz) {
+    p.flying = true;
+    const inv = 1 / p.mass;
+    const d = Math.max(0.001, Math.hypot(dx, dz));
+    const sp = vel.length();
+    p.vel.set(
+      (vel.x * 0.7 + (dx / d) * 4) * inv,
+      (2.4 + sp * 0.11) * inv,
+      (vel.z * 0.7 + (dz / d) * 4) * inv,
+    );
+    p.angVel.set(
+      (Math.random() - 0.5) * 10 * inv,
+      (Math.random() - 0.5) * 10 * inv,
+      (Math.random() - 0.5) * 10 * inv,
+    );
+    if (p.isPin) {
+      if (!p.down) {
+        p.down = true;
+        pinsDown++;
+        if (hud?.els?.pins) hud.els.pins.textContent = `pins ${pinsDown}/${pinsTotal}`;
+        if (pinsDown === pinsTotal) hud?.toast('every pin down — strike!', 'ok');
+      }
+      audio.clack();
+    } else if (p.isCone) {
+      audio.clack();
+    } else {
+      audio.thud();
+      shake = Math.min(1, shake + 0.2);
+      vel.multiplyScalar(0.9);
+    }
+  }
+
+  /* outside the builder block — the cone-instance promoter needs it too */
+  const addProp = (g, opts) => {
+    g.position.y = opts.restStand;
+    scene.add(g);
+    props.push({
+      g,
+      r: opts.r,
+      mass: opts.mass,
+      restStand: opts.restStand,
+      restLie: opts.restLie,
+      isPin: !!opts.isPin,
+      isCone: !!opts.isCone,
+      down: false,
+      flying: false,
+      vel: new THREE.Vector3(),
+      angVel: new THREE.Vector3(),
+    });
+  };
 
   {
-    const addProp = (g, opts) => {
-      g.position.y = opts.restStand;
-      scene.add(g);
-      props.push({
-        g,
-        r: opts.r,
-        mass: opts.mass,
-        restStand: opts.restStand,
-        restLie: opts.restLie,
-        isPin: !!opts.isPin,
-        down: false,
-        flying: false,
-        vel: new THREE.Vector3(),
-        angVel: new THREE.Vector3(),
-      });
-    };
-
     /* pins: white-and-red cylinders in triangle clusters on the shoulder */
     const pinGeo = new THREE.CylinderGeometry(0.17, 0.21, 1.1, 10);
     const stripeGeo = new THREE.CylinderGeometry(0.215, 0.215, 0.16, 10);
@@ -1495,6 +1623,104 @@ export function mount() {
       g.lookAt(Math.cos(a) * ROAD_R, 0, Math.sin(a) * ROAD_R);
       addProp(g, { r: 0.8, mass: 2.6, restStand: H / 2, restLie: 0.32 });
     });
+
+    /* stunt strips: every doc exit gets a seeded jump ramp + cone slalom
+       on the approach — the docs become a stunt course, not just signs */
+    const rampMat = new THREE.MeshStandardMaterial({
+      map: chevronTexture(),
+      roughness: 0.6,
+      emissive: 0x3a342c,
+      emissiveIntensity: 0.35,
+      side: THREE.DoubleSide,
+    });
+    /* one merged, vertex-colored cone geometry: ALL resting cones render
+       as a single InstancedMesh — a cone only becomes a real physics mesh
+       once the car hits it. ~120 individual cone groups cost ~270 draw
+       calls and took the iGPU from 60fps to 10. */
+    const colorize = (geo, hex) => {
+      const cc = new THREE.Color(hex);
+      const n = geo.attributes.position.count;
+      const arr = new Float32Array(n * 3);
+      for (let k = 0; k < n; k++) {
+        arr[k * 3] = cc.r;
+        arr[k * 3 + 1] = cc.g;
+        arr[k * 3 + 2] = cc.b;
+      }
+      geo.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+      return geo;
+    };
+    coneGeoShared = mergeGeometries([
+      colorize(new THREE.ConeGeometry(0.32, 0.72, 9), 0xf08a3c),
+      colorize(new THREE.CylinderGeometry(0.21, 0.25, 0.14, 9).translate(0, -0.08, 0), 0xf2ecdf),
+    ]);
+    coneMatShared = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.55,
+      emissive: 0x2a1606,
+      emissiveIntensity: 0.55,
+    });
+    /* tangent of the ring at angle a, pointing counter-clockwise (the
+       direction the car spawns facing) */
+    const tangentAt = (a, out) => {
+      out.set(
+        Math.cos(a + 0.04) * ROAD_R - Math.cos(a) * ROAD_R,
+        0,
+        Math.sin(a + 0.04) * ROAD_R - Math.sin(a) * ROAD_R,
+      );
+      return out.normalize();
+    };
+    const tanV = new THREE.Vector3();
+    posts.forEach((post, i) => {
+      const rnd = mulberry(hash32(`stunt-${post.slug ?? i}`));
+      const aB = bbAngle(i, post.slug);
+      /* ramp sits just before the exit, riding the outer half of the road */
+      const len = 7 + rnd() * 2.5;
+      const hgt = 1.5 + rnd() * 0.8;
+      const aR = aB - (16 + rnd() * 6) / ROAD_R;
+      const rr = ROAD_R + (rnd() - 0.35) * 5;
+      const ramp = new THREE.Mesh(wedgeGeometry(4.2, hgt, len), rampMat);
+      ramp.position.set(Math.cos(aR) * rr, 0.02, Math.sin(aR) * rr);
+      tangentAt(aR, tanV);
+      ramp.lookAt(ramp.position.x + tanV.x, 0.02, ramp.position.z + tanV.z);
+      ramp.receiveShadow = true;
+      scene.add(ramp);
+      ramps.push({
+        x: ramp.position.x,
+        z: ramp.position.z,
+        fx: tanV.x,
+        fz: tanV.z,
+        rx: tanV.z,
+        rz: -tanV.x,
+        len,
+        h: hgt,
+        w: 4.2,
+      });
+      /* cone slalom on the approach — instances, not objects */
+      const nCones = 4 + Math.floor(rnd() * 3);
+      for (let k = 0; k < nCones; k++) {
+        const aC = aR - (5 + k * 3.6) / ROAD_R;
+        tangentAt(aC, tanV);
+        const lat = (k % 2 ? 1 : -1) * (2.2 + rnd() * 1.4);
+        coneSpots.push({
+          x: Math.cos(aC) * ROAD_R + tanV.z * lat,
+          z: Math.sin(aC) * ROAD_R - tanV.x * lat,
+          alive: true,
+        });
+      }
+    });
+
+    coneInst = new THREE.InstancedMesh(coneGeoShared, coneMatShared, coneSpots.length);
+    coneInst.castShadow = true;
+    {
+      const m4 = new THREE.Matrix4();
+      coneSpots.forEach((c, k) => {
+        c.idx = k;
+        m4.makeRotationY(hash01(`cone-rot${k}`) * Math.PI);
+        m4.setPosition(c.x, 0.36, c.z);
+        coneInst.setMatrixAt(k, m4);
+      });
+    }
+    scene.add(coneInst);
   }
 
   /* ----- input ----- */
@@ -1669,6 +1895,12 @@ export function mount() {
   let dockIdx = -1;
   let shake = 0;
   let hudTimer = 0;
+  /* vertical: ramps launch the car, gravity brings it back */
+  let vy = 0;
+  let airborne = false;
+  let airT = 0;
+  let squash = 0;
+  let lampCullT = 9; // force an immediate first cull pass
 
   const fwdOf = (a, out) => out.set(Math.sin(a), 0, Math.cos(a));
 
@@ -1677,6 +1909,8 @@ export function mount() {
     car.position.copy(roadPoint(a));
     carA = a + Math.PI / 2;
     vel.set(0, 0, 0);
+    vy = 0;
+    airborne = false;
     audio.splash();
     hud?.toast('fished out — back on the road');
     shake = 1;
@@ -1694,9 +1928,9 @@ export function mount() {
     const speedAlong = vel.dot(fwd);
     const speed = vel.length();
 
-    /* engine / brake / reverse */
-    if (keys.gas) vel.addScaledVector(fwd, 26 * dt);
-    if (keys.brake) {
+    /* engine / brake / reverse — wheels need the ground */
+    if (keys.gas && !airborne) vel.addScaledVector(fwd, 26 * dt);
+    if (keys.brake && !airborne) {
       if (speedAlong > 1) vel.multiplyScalar(Math.exp(-dt * 2.6));
       else vel.addScaledVector(fwd, -11 * dt); // reverse
     }
@@ -1706,15 +1940,17 @@ export function mount() {
     /* offroad: heavy grass drag */
     const radial = Math.hypot(car.position.x, car.position.z);
     const offroad = Math.abs(radial - ROAD_R) > ROAD_W + 1.2;
-    if (offroad) vel.multiplyScalar(Math.exp(-dt * 0.9));
+    if (offroad && !airborne) vel.multiplyScalar(Math.exp(-dt * 0.9));
 
     /* steering: stronger at speed, reversed in reverse */
     const dir = speedAlong >= 0 ? 1 : -1;
-    const grip = keys.drift ? 2.0 : 9.0;
+    const airK = airborne ? 0.12 : 1; // barely any authority mid-air
+    const grip = (keys.drift ? 2.0 : 9.0) * airK;
     carA +=
       steer *
       dir *
       (keys.drift ? 3.4 : 2.5) *
+      airK *
       dt *
       THREE.MathUtils.clamp(speed / 9, 0, 1) *
       (1 / (1 + speed * 0.012));
@@ -1724,12 +1960,60 @@ export function mount() {
     const right = tmpV2.set(fwd.z, 0, -fwd.x);
     const latV = vel.dot(right);
     vel.addScaledVector(right, latV * (Math.exp(-dt * grip) - 1));
-    const drifting = Math.abs(latV) > 6 && speed > 10;
+    const drifting = Math.abs(latV) > 6 && speed > 10 && !airborne;
 
     if (speed > VMAX) vel.setLength(VMAX);
     car.position.addScaledVector(vel, dt);
-    car.position.y = 0;
     car.rotation.y = carA;
+
+    /* --- vertical: ramps, launches, landings --- */
+    let groundY = 0;
+    for (const rp of ramps) {
+      const dx = car.position.x - rp.x;
+      const dz = car.position.z - rp.z;
+      if (dx * dx + dz * dz > rp.len * rp.len + 30) continue;
+      const s = dx * rp.fx + dz * rp.fz;
+      const l = dx * rp.rx + dz * rp.rz;
+      if (s > -0.4 && s < rp.len && Math.abs(l) < rp.w / 2) {
+        const sy = Math.max(0, (s / rp.len) * rp.h);
+        if (sy - car.position.y > 1.0 && !airborne) {
+          /* came at the tall face — it's a wall, not a launch */
+          vel.multiplyScalar(0.45);
+          car.position.x -= rp.fx * 0.6;
+          car.position.z -= rp.fz * 0.6;
+          audio.thud();
+        } else groundY = Math.max(groundY, sy);
+      }
+    }
+    if (airborne) {
+      vy -= 26 * dt;
+      car.position.y += vy * dt;
+      airT += dt;
+      if (car.position.y <= groundY) {
+        car.position.y = groundY;
+        airborne = false;
+        squash = Math.min(1, Math.max(0.3, -vy * 0.07));
+        if (vy < -7) {
+          audio.thud();
+          shake = Math.min(1, shake + 0.3);
+        }
+        vy = 0;
+        if (airT > 0.5)
+          hud?.toast(`air ${airT.toFixed(1)}s${airT > 1.1 ? ' — send it!' : ''}`, airT > 1.1 ? 'ok' : '');
+      }
+    } else {
+      const rise = groundY - car.position.y;
+      if (rise >= -0.02) {
+        /* grounded — follow the surface and remember the climb rate */
+        if (rise > 0) vy = rise / dt;
+        else vy = Math.max(0, vy * 0.6);
+        car.position.y = groundY;
+      } else {
+        /* the ground fell away: launched with whatever climb we carried */
+        airborne = true;
+        airT = 0;
+      }
+    }
 
     /* lake: splash + reset */
     if (radial < LAKE_R - 2) resetToRoad();
@@ -1761,39 +2045,34 @@ export function mount() {
       }
     }
 
+    /* resting cones are instances — promote to a live prop on contact */
+    if (coneInst && speed > 3 && car.position.y < 1.1) {
+      for (const c of coneSpots) {
+        if (!c.alive) continue;
+        const dx = c.x - car.position.x;
+        const dz = c.z - car.position.z;
+        if (dx * dx + dz * dz < 3.1) {
+          c.alive = false;
+          coneM4.makeScale(0, 0, 0);
+          coneInst.setMatrixAt(c.idx, coneM4);
+          coneInst.instanceMatrix.needsUpdate = true;
+          const m = new THREE.Mesh(coneGeoShared, coneMatShared);
+          m.castShadow = true;
+          m.position.set(c.x, 0, c.z);
+          addProp(m, { r: 0.42, mass: 0.5, restStand: 0.36, restLie: 0.3, isCone: true });
+          knockProp(props[props.length - 1], dx, dz);
+        }
+      }
+    }
+
     /* knockables: drive through pins and letters, they tumble */
     for (const p of props) {
       if (!p.flying) {
         const dx = p.g.position.x - car.position.x;
         const dz = p.g.position.z - car.position.z;
         const rr = p.r + 1.35;
-        if (dx * dx + dz * dz < rr * rr && speed > 3) {
-          p.flying = true;
-          const inv = 1 / p.mass;
-          const d = Math.max(0.001, Math.hypot(dx, dz));
-          p.vel.set(
-            (vel.x * 0.7 + (dx / d) * 4) * inv,
-            (2.4 + speed * 0.11) * inv,
-            (vel.z * 0.7 + (dz / d) * 4) * inv,
-          );
-          p.angVel.set(
-            (Math.random() - 0.5) * 10 * inv,
-            (Math.random() - 0.5) * 10 * inv,
-            (Math.random() - 0.5) * 10 * inv,
-          );
-          if (p.isPin) {
-            if (!p.down) {
-              p.down = true;
-              pinsDown++;
-              if (hud?.els?.pins) hud.els.pins.textContent = `pins ${pinsDown}/${pinsTotal}`;
-              if (pinsDown === pinsTotal) hud?.toast('every pin down — strike!', 'ok');
-            }
-            audio.clack();
-          } else {
-            audio.thud();
-            shake = Math.min(1, shake + 0.2);
-            vel.multiplyScalar(0.9);
-          }
+        if (dx * dx + dz * dz < rr * rr && speed > 3 && car.position.y < 1.1) {
+          knockProp(p, dx, dz);
         }
       } else {
         p.vel.y -= 20 * dt;
@@ -1831,16 +2110,22 @@ export function mount() {
     );
     body.rotation.x = THREE.MathUtils.lerp(
       body.rotation.x,
-      -accelN * 0.035 * THREE.MathUtils.clamp(speed / 14, 0, 1),
+      airborne
+        ? THREE.MathUtils.clamp(-vy * 0.03, -0.28, 0.34)
+        : -accelN * 0.035 * THREE.MathUtils.clamp(speed / 14, 0, 1),
       1 - Math.exp(-dt * 5),
     );
+    /* landing squash: the suspension takes the hit */
+    squash = Math.max(0, squash - dt * 2.8);
+    body.scale.y = 1 - 0.2 * squash;
+    body.position.y = -0.09 * squash;
     for (const w of wheels) w.rotation.x += speedAlong * dt * 2.4;
     for (const p of steerPivots)
       p.rotation.y = THREE.MathUtils.lerp(p.rotation.y, steer * 0.42, 1 - Math.exp(-dt * 10));
     tail.material.emissiveIntensity = keys.brake ? 3.4 : 1.4;
 
     audio.engine(speed, keys.gas ? 1 : 0);
-    audio.skid(drifting || (offroad && speed > 14));
+    audio.skid(drifting || (offroad && speed > 14 && !airborne));
 
     /* --- env animation --- */
     skyMat.uniforms.uTime.value = reduced ? 12 : time;
@@ -1906,6 +2191,15 @@ export function mount() {
           coarse ? 'TAP TO READ' : 'PRESS ⏎ TO READ'
         } · EXIT ${String(bb.idx + 1).padStart(2, '0')}</i>`;
       } else if (dockEl) dockEl.hidden = true;
+    }
+
+    /* --- lamp culling: only the two nearest pools light the shaders --- */
+    if ((lampCullT += dt) > 0.3) {
+      lampCullT = 0;
+      for (const L of lampLights)
+        L.d = (L.x - car.position.x) ** 2 + (L.z - car.position.z) ** 2;
+      lampLights.sort((a, b) => a.d - b.d);
+      for (let i = 0; i < lampLights.length; i++) lampLights[i].light.visible = i < 2;
     }
 
     /* --- moonlight follows the car (texel-snapped, no shimmer) --- */

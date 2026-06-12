@@ -163,6 +163,17 @@ Rules that keep it healthy:
   display-referred: additive grain in linear HDR lifts night blacks into gray
   haze. No volumetric headlight cones — the chase camera looks straight down the
   beam axis, so an additive cone reads as a permanent blob mid-screen.
+- Lighting: streetlights are REAL PointLights (no additive cones/pools), but
+  forward rendering pays per light per fragment — only the nearest two are
+  `visible` at a time, and the active count must stay CONSTANT or three
+  recompiles every program. Mass props (cones) render as one InstancedMesh and
+  are promoted to physics meshes on contact; ~250 individual prop groups cost
+  the iGPU two thirds of its frame rate.
+- Stunt ramps drive real y-physics (`vy`/`airborne` in the frame loop) — the
+  car's y is sampled from ramp surfaces, never hard-set to 0.
+- If a world's `mount()` throws, the Base.astro bootstrap blacklists that style
+  for the session (`failed` set). Before that guard, a throwing mount looped
+  mount → catch → re-sync forever, leaking a WebGL context per attempt.
 
 ## Deploy / domain
 
