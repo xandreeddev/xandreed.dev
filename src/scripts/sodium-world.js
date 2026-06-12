@@ -561,15 +561,15 @@ function billboardTexture(post, i, found) {
 
 /* iPad gets the same legend as desktop — it just spells the touch binds */
 const HELP = coarse
-  ? 'stick steers · ▲ gas latches · ⊕ drift · pull in to read'
-  : 'W gas · S brake · A/D steer · space drift · ↵ read at an exit · M sound';
+  ? 'stick steers · ▲ gas latches · ⊕ drift · pull in to read · ⟲ if stuck'
+  : 'W gas · S brake · A/D steer · space drift · ↵ read at an exit · R reset · M sound';
 
 function makeHud(total, foundCount) {
   const hud = document.createElement('div');
   hud.className = 'sodium-hud';
   hud.innerHTML = `
     <div class="sd-meta"><b>night drive</b><span data-sd-docs>docs ${foundCount}/${total} discovered</span><span data-sd-pins></span></div>
-    <div class="sd-corner"><button type="button" data-sd-mute aria-label="Toggle sound"></button></div>
+    <div class="sd-corner"><button type="button" data-sd-reset aria-label="Reset to road" title="stuck? back to the road">⟲ reset</button><button type="button" data-sd-mute aria-label="Toggle sound"></button></div>
     <div class="sd-speed" data-sd-gauge><div><b data-sd-speed>0</b><span>km/h</span></div></div>
     <div class="sd-toasts" data-sd-toasts aria-live="polite"></div>
     <div class="sd-dock" data-sd-dock hidden></div>
@@ -2152,6 +2152,7 @@ export function mount() {
           return;
         }
         if (['m', 'M'].includes(e.key)) toggleMute();
+        else if (['r', 'R'].includes(e.key)) resetToRoad('⟲ reset — back on the road');
         else if (e.key === 'Enter' && dockIdx >= 0 && document.activeElement === document.body)
           location.href = billboards[dockIdx].post.href;
       },
@@ -2249,6 +2250,9 @@ export function mount() {
       { signal },
     );
     hud?.querySelector('[data-sd-mute]')?.addEventListener('click', toggleMute, { signal });
+    hud?.querySelector('[data-sd-reset]')?.addEventListener('click', () => resetToRoad('⟲ reset — back on the road'), {
+      signal,
+    });
     syncMute();
   }
 
@@ -2306,13 +2310,13 @@ export function mount() {
 
   const fwdOf = (a, out) => out.set(Math.sin(a), 0, Math.cos(a));
 
-  function resetToRoad() {
+  function resetToRoad(msg = 'fished out — back on the road') {
     const a = Math.atan2(car.position.z, car.position.x);
     const sp = roadPoint(a);
     placeCar(sp.x, sp.z, a + Math.PI / 2);
     airborne = false;
     audio.splash();
-    hud?.toast('fished out — back on the road');
+    hud?.toast(msg);
     shake = 1;
   }
 

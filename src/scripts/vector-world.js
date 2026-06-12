@@ -791,8 +791,8 @@ function jitter(geo, seed) {
 
 /* iPad gets the same legend as desktop — it just spells the touch binds */
 const HELP_WORLD = coarse
-  ? 'stick steers · ▲ latches thrust · ⚡ holds boost · tap a planet to read it'
-  : 'mouse aim · W thrust · shift boost · space fire · E missile · Q parry · S brake · T tree · M sound · esc release';
+  ? 'stick steers · ▲ latches thrust · ⚡ holds boost · tap a planet to read it · ⟲ if stuck'
+  : 'mouse aim · W thrust · shift boost · space fire · E missile · Q parry · S brake · T tree · R reset · esc release';
 const HELP_RUN = coarse
   ? 'steer across the tube · ⚡ boost · ■ brake'
   : 'steer across the tube · shift boost · S brake · space fire · E missile · Q parry';
@@ -815,6 +815,7 @@ function makeHud(n) {
     <div class="vh-boss" data-vh-boss hidden aria-hidden="true"><span data-vh-boss-name>⌬ THE WARDEN</span><div><i data-vh-boss-fill></i></div></div>
     <div class="vh-corner">
       <button type="button" data-vh-tree-btn>⬡ tree</button>
+      <button type="button" data-vh-reset title="stuck? recover the ship">⟲ reset</button>
       <button type="button" data-vh-mute aria-label="Toggle sound"></button>
     </div>
     <div class="vh-lock" data-vh-lock aria-hidden="true"></div>
@@ -1929,6 +1930,22 @@ export function mount() {
     }
   }
 
+  /* stuck anywhere — wedged in a run, lost in the void — one key recovers:
+     a live run bails beside its portal (endRun's drop), the overworld
+     re-spawns at the home pad. Nothing banked is lost. */
+  function resetShip() {
+    if (run.active) {
+      endRun(false);
+    } else if (ship) {
+      const p0 = planets[0]?.group.position ?? new THREE.Vector3(0, 0, 90);
+      ship.position.copy(p0).multiplyScalar(1.6).add(new THREE.Vector3(0, 22, 0));
+      ship.lookAt(core.position);
+      ship.rotateY(Math.PI);
+      vel.set(0, 0, 0);
+    }
+    hud?.toast('⟲ ship recovered — systems nominal');
+  }
+
   /* portal labels name the game behind each gate + the live run level */
   function relabelPortals() {
     const level = store.runLevel();
@@ -2562,6 +2579,7 @@ export function mount() {
         else if (['q', 'Q'].includes(k)) parry();
         else if (['t', 'T'].includes(k)) toggleTree();
         else if (['m', 'M'].includes(k)) toggleMute();
+        else if (['r', 'R'].includes(k)) resetShip();
         else if (k === 'Escape') toggleTree(false);
         else if (['a', 'A', 'ArrowLeft'].includes(k)) { keys.roll = 1; e.preventDefault(); }
         else if (['d', 'D', 'ArrowRight'].includes(k)) { keys.roll = -1; e.preventDefault(); }
@@ -2658,6 +2676,7 @@ export function mount() {
       { signal },
     );
     hud?.querySelector('[data-vh-mute]')?.addEventListener('click', toggleMute, { signal });
+    hud?.querySelector('[data-vh-reset]')?.addEventListener('click', () => resetShip(), { signal });
     syncMuteBtn();
   }
 
