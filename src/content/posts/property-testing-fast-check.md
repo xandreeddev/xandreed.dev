@@ -1,9 +1,9 @@
 ---
 title: 'The model will find the fourth shape: property-based testing with fast-check'
 description: 'Property-based testing for mapping code: fast-check via Effect, with generators derived from your schemas.'
-pubDate: 2026-06-11
+pubDate: 2026-06-14
 tags: [effect, typescript, agents]
-draft: true
+draft: false
 ---
 
 There's a category of code that decides whether your system works and that nobody can review by reading: mapping code. Serializers, message translators, compression planners, parsers. It's not hard code — every branch is a `case` and a field rename — but its input space is combinatorial, and your example tests cover exactly the inputs you thought of. Three message shapes, hand-typed in a test file, asserting three outputs you also hand-typed.
@@ -232,7 +232,7 @@ That pair — careful write, exact read — is the entire persistence story for 
 
 ## Properties for compression plans
 
-The same commit property-tested a very different seam: **headroom**, [efferent](https://github.com/xandreeddev/agent)'s context-compression pass (a post of its own). When a tool result is oversized, a planner splits it into a head to keep, a middle to drop, and a tail to keep. Compression is the canonical place where example tests give false confidence — every example you write is text you chose, and text you chose has friendly lengths and friendly characters:
+The same commit property-tested a very different seam: **headroom**, the context-compression pass in [efferent](https://github.com/xandreeddev/agent) — its name and core idea borrowed from the [chopratejas/headroom](https://github.com/chopratejas/headroom) library (a post of its own). When a tool result is oversized, a planner splits it into a head to keep, a middle to drop, and a tail to keep. Compression is the canonical place where example tests give false confidence — every example you write is text you chose, and text you chose has friendly lengths and friendly characters:
 
 ```ts title="packages/core/src/usecases/headroom.test.ts"
 it('planClip fires iff oversized; the split is lossless; head/tail sizes exact', () => {

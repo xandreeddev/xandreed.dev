@@ -1,7 +1,7 @@
 ---
 title: 'Evals are unit tests for behavior, and they belong in the repo'
 description: "Cases, tasks, and scorers as Effect programs — and why an agent's evals belong in the same repo as its prompts."
-pubDate: 2026-06-05
+pubDate: 2026-06-10
 tags: [evals, effect, ai]
 ---
 

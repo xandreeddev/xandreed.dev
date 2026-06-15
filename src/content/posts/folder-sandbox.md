@@ -1,7 +1,7 @@
 ---
 title: 'The whole permission model is one folder'
 description: 'A coding-agent sandbox with one primitive: read anywhere, write inside the folder — enforced in code, not in the prompt.'
-pubDate: 2026-06-11
+pubDate: 2026-07-06
 tags: [agents, effect, ux]
 draft: true
 ---

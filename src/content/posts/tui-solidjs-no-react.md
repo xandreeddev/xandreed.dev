@@ -1,7 +1,7 @@
 ---
 title: 'Updating one cell should cost one cell: the architecture of an agent TUI'
 description: "How efferent's terminal UI works: OpenTUI over FFI, Solid signals, one Effect queue, and a pure presentation core."
-pubDate: 2026-06-12
+pubDate: 2026-06-15
 tags: [tui, agents, typescript]
 ---
 

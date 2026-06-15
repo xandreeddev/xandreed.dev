@@ -1,7 +1,7 @@
 ---
 title: 'Your model provider is already a search engine'
 description: 'Agent web access with no extra key: server-side grounding for discovery, plain HTTP for reading.'
-pubDate: 2026-06-11
+pubDate: 2026-07-13
 tags: [ai, agents]
 draft: true
 ---

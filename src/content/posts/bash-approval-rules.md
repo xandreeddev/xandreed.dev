@@ -1,7 +1,7 @@
 ---
 title: 'Most approval prompts should never render'
 description: 'How a fast-tier LLM judge waves ordinary shell work through silently — and why the worst it can do is show a dialog.'
-pubDate: 2026-06-02
+pubDate: 2026-06-08
 tags: [agents, effect, ux]
 ---
 

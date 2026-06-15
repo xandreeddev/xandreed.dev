@@ -1,7 +1,7 @@
 ---
 title: 'Zero-config storage: Postgres is an option, not a prerequisite'
 description: 'A local tool should remember on first run — SQLite by default, migrations in the bundle, Postgres one env var away.'
-pubDate: 2026-06-11
+pubDate: 2026-07-17
 tags: [effect, agents, ux]
 draft: true
 ---

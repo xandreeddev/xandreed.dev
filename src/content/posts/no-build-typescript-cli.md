@@ -1,7 +1,7 @@
 ---
 title: 'No build step: run the source, gate with tsc, bundle only to publish'
 description: 'Bun runs the .ts you edit, tsc --noEmit becomes a pure type gate, and the bundler appears only at publish time.'
-pubDate: 2026-06-11
+pubDate: 2026-07-20
 tags: [typescript, agents]
 draft: true
 ---

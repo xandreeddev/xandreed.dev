@@ -1,7 +1,7 @@
 ---
 title: 'Make the meter visible: token spend is a UI concern'
 description: 'Token spend measured per call, attributed per role and agent, persisted with the work, shown where decisions happen.'
-pubDate: 2026-06-11
+pubDate: 2026-07-15
 tags: [agents, ux, ai]
 draft: true
 ---

@@ -1,7 +1,7 @@
 ---
 title: 'Your LLM provider is state, not architecture'
 description: 'Provider choice is request-scoped state — one LanguageModel that re-resolves model, credential, and client per call.'
-pubDate: 2026-05-29
+pubDate: 2026-06-06
 tags: [effect, ai, agents]
 ---
 

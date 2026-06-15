@@ -1,14 +1,14 @@
 ---
 title: 'Where exceptions are allowed to exist'
 description: 'Failures are values everywhere inside; exceptions survive only at the adapter boundary, under Effect.try. An audit of my own codebase, with the diffs.'
-pubDate: 2026-06-12
+pubDate: 2026-06-04
 tags: [effect, typescript]
-draft: true
+draft: false
 ---
 
 Yesterday I was rereading one of my own drafts — the one praising the approval judge in [efferent](https://github.com/xandreeddev/agent) — and the code snippet under my own headline had a `try/catch` in it. In the *domain*. The article was selling typed failures while quoting a function that handled failure the JavaScript way, in the one package where that's supposed to be impossible.
 
-The fix took an afternoon. The afternoon produced a rule worth writing down, an audit that found three more violations — each a different species — and one genuine bug that the rule would have prevented. This post is all of it, diffs included.
+The fix took an afternoon. The afternoon produced a rule worth writing down, an audit that found three more violations — each a different species, the last of them a genuine bug the rule would have prevented. This post is all of it, diffs included.
 
 ## Two vocabularies for failure
 
@@ -114,12 +114,12 @@ export const reassembleMessageRow = (role: string, content: unknown): unknown =>
 }
 ```
 
-This is adapter code — exceptions are *allowed* here, right? Look closer at how it was called:
+This is adapter code — exceptions are *allowed* here, right? Right — but "allowed in an adapter" means *captured inside an Effect*, where the capture maps the throw onto a tagged error. This throw is captured by nothing. Look at where the codec was called — one file over, in the SQL store:
 
-```ts
+```ts title="packages/adapters/src/conversationStore/sqlite.ts"
 const decodeMessage = (row: MessageRow) =>
   Schema.decodeUnknown(AgentMessage)(
-    reassembleMessageRow(row.role, row.content), // evaluated OUTSIDE the Effect // [!code highlight]
+    reassembleMessageRow(row.role, row.content), // runs while BUILDING the Effect, not inside it // [!code highlight]
   ).pipe(Effect.mapError((cause) => new ConversationStoreError({ cause /* … */ })))
 ```
 
@@ -167,5 +167,25 @@ Against that: every one of the four findings was *invisible at review time* and 
 ```
 
 A rule you can grep for is a rule that survives contributors, tired evenings, and coding agents. That last one isn't hypothetical: most of [efferent](https://github.com/xandreeddev/agent) is written with an agent in the loop, and an agent will absolutely reach for `try/catch` around `JSON.parse` — it's the most statistically likely error handling in its training data. The grep doesn't care. It fails the build, the agent reads the failure, and the next attempt uses the decoder. Architecture that defends itself is the only kind that holds when the contributor never gets tired and never reads the style guide.
+
+## From grep to a gate
+
+I wrote *grep* up there because it fits in a tweet and it's true. It isn't what guards the repo. A grep reads text, not syntax, and the rule lives in three blind spots no regex closes cleanly:
+
+- **`Effect.try` and `Effect.tryPromise` are the sanctioned escape hatch — and they contain the letters `try`.** The whole post hands exceptions a visa stamped `Effect.try`; a gate that can't tell the visa from the crime is the wrong gate. In text you start bolting on negative lookarounds. In a syntax tree, a `try` *statement* and a `.try(…)` *call* are just different nodes — one banned, one blessed, no cleverness.
+- **Strings and comments lie.** A comment that says "don't `throw` here" is a finding to grep and nothing to a reader. An AST never mistakes them for code.
+- **`.catch()` is a `try/catch` wearing a method call.** Grepping for `try {` and `throw ` walks straight past `somePromise.catch(…)` — a whole species of exception handling the line-based version never sees.
+
+So the shipped gate is a ~90-line walk over the TypeScript AST (`scripts/banTryCatch.ts`), zero new dependencies — `typescript` was already in the tree for the typecheck. It flags `try`/`throw` statements and `.catch()` calls under `@efferent/core/src`, then prints `file:line:col — use Effect.catchAll / Effect.catchTag`. It's folded into `bun run typecheck` (now `tsc --noEmit && bun scripts/banTryCatch.ts`), so purity rides along with the types everywhere the typecheck already runs.
+
+It's also stricter than the grep in a way I didn't plan: the grep carried `--exclude='*.test.ts'`; the AST walk exempts nothing. Turning it on immediately flagged four test doubles that did `throw new Error("unused")` to mean "this method is never called." Fair intent — but a mock that throws is still an exception living in the domain's own test surface, so they became `Effect.die("unused")`: same meaning, value vocabulary, no `throw` on the line.
+
+Then the scan is wired at three depths, fastest to firmest:
+
+1. **A local `pre-commit` hook**, installed for free — `bun install` runs a `prepare` script (`installHooks.ts`) that drops the hook into `.git/hooks`, no-ops outside a real checkout, and never clobbers a hook it didn't write. This is the fast feedback loop, not the guarantee: `git commit --no-verify` walks past it by design. A hook's job is to save you the round-trip to CI, not to be the wall.
+2. **The `ci` workflow**, on every push to `main` and every PR: `bun run typecheck` (scan included) plus the test suite.
+3. **Branch protection on `main` requiring `ci`, no admin bypass.** *This* is the wall. A banned construct can't be merged and can't be pushed to `main` — no matter who's tired or what `--no-verify` they typed locally.
+
+The rule went into `AGENT.md` as well, in plain English, so the agent reads it before it writes a line. But the gate deliberately doesn't *depend* on the agent reading it — that's the previous section made load-bearing. The English is a courtesy; the AST scan is the contract.
 
 So: failures are values, everywhere a value can reach. Exceptions get a visa for the adapter boundary, stamped `Effect.try`, and nowhere else. And once a quarter, run the grep on your own domain — yesterday it found four things in mine, in a codebase whose whole thesis is doing this properly. The vocabulary doesn't enforce itself.

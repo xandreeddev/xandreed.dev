@@ -1,7 +1,7 @@
 ---
 title: 'Effect from zero: the beginner''s guide I wanted'
 description: 'Programs as values, errors you can see, and batteries included — Effect.ts from nothing, with standalone examples and a map of what to ignore at first.'
-pubDate: 2026-06-05
+pubDate: 2026-05-29
 tags: [effect, typescript]
 ---
 

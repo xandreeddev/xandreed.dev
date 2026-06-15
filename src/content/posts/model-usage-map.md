@@ -1,7 +1,7 @@
 ---
 title: 'Your app calls a model in more places than you think'
 description: 'Every LLM call site in a real agent, enumerated: which tier serves it, how it fails, and where its tokens land.'
-pubDate: 2026-06-11
+pubDate: 2026-06-19
 tags: [ai, agents, effect]
 draft: true
 ---

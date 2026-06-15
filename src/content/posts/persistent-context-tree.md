@@ -1,7 +1,7 @@
 ---
 title: 'Sub-agent transcripts are capital, not exhaust'
 description: "Most frameworks throw away a sub-agent's context. Keep every one as a node in a persistent, resumable tree instead."
-pubDate: 2026-06-09
+pubDate: 2026-06-11
 tags: [agents, ai, effect]
 ---
 

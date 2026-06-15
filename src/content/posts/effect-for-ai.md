@@ -1,7 +1,7 @@
 ---
 title: 'AI applications are Effect-shaped'
 description: 'Flaky IO, string boundaries, provider churn, fan-out, cancellation that stops billing — the defining problems of LLM apps are the ones effect systems were built for.'
-pubDate: 2026-06-19
+pubDate: 2026-06-02
 tags: [effect, ai]
 ---
 

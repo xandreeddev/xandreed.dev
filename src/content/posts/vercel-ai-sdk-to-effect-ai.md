@@ -1,7 +1,7 @@
 ---
 title: 'Tools are programs: a post-mortem of migrating from the Vercel AI SDK to @effect/ai'
 description: 'A migration post-mortem with the diff: what @effect/ai restructured, what survived untouched, and what it cost.'
-pubDate: 2026-06-11
+pubDate: 2026-06-22
 tags: [effect, ai, agents]
 draft: true
 ---

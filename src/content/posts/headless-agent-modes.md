@@ -1,7 +1,7 @@
 ---
 title: 'Your agent is a protocol, not an app'
 description: 'One loop, one typed event stream, four renderers — why headless modes fall out of the architecture for free.'
-pubDate: 2026-06-11
+pubDate: 2026-07-22
 tags: [agents, effect, typescript]
 draft: true
 ---

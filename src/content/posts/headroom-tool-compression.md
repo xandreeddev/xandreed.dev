@@ -1,7 +1,7 @@
 ---
 title: 'The only safe moment to compress a tool output is before it becomes history'
 description: 'Cache-safe tool-output compression for agents: clip once at append time, behind a marker the model can reverse.'
-pubDate: 2026-06-11
+pubDate: 2026-07-01
 tags: [agents, effect, ai]
 draft: true
 ---
@@ -20,7 +20,7 @@ const prompt = [system, ...messages] // the 80k rides along, every single time
 
 At the usual rough exchange rate of ~4 characters per token, that one grep is ~20,000 tokens — a tenth of a 200k context window, billed as input again on every turn that follows. Twenty more turns means that single tool call costs roughly twenty times what it looks like it costs.
 
-This post is about **headroom**: the subsystem in [efferent](https://github.com/xandreeddev/agent), the coding agent I'm building on Effect, that compresses oversized tool outputs under two non-negotiable constraints — don't break the provider's prompt cache, and don't break the model's ability to get the data back. The name and several of the tactics come from [chopratejas/headroom](https://github.com/chopratejas/headroom), a Python proxy whose ideas port cleanly even though the dependency doesn't. What follows is the TypeScript-native version, with receipts.
+This post is about cache-safe tool-output compression: clipping an agent's oversized tool results under two non-negotiable constraints — don't break the provider's prompt cache, and don't break the model's ability to get the data back. I didn't invent the approach. I took the core idea — and the name — from [chopratejas/headroom](https://github.com/chopratejas/headroom), a Python proxy whose *dependency* doesn't port to a TypeScript/Bun agent but whose *ideas* do. What follows is the version I rebuilt around those ideas inside [efferent](https://github.com/xandreeddev/agent), the coding agent I'm building on Effect — where the module still carries the **headroom** name in tribute — with receipts.
 
 ## Three obvious fixes, three ways to lose
 

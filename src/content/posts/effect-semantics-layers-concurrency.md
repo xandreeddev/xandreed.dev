@@ -1,7 +1,7 @@
 ---
 title: 'Effect, in full: services, layers, errors, and the concurrency toolkit'
 description: 'What Effect.ts actually buys you — dependencies, failures, and concurrency as ordinary values. A long tour of the semantics, every claim backed by real code.'
-pubDate: 2026-06-11
+pubDate: 2026-05-31
 tags: [effect, typescript]
 ---
 

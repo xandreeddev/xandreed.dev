@@ -1,7 +1,7 @@
 ---
 title: 'Pay for the index, not the book: extending an agent with markdown on disk'
 description: 'Skills and instruction files make the filesystem a plugin system: cheap always-on index, bodies loaded on demand.'
-pubDate: 2026-06-11
+pubDate: 2026-07-03
 tags: [agents, ai, effect]
 draft: true
 ---

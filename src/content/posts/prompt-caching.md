@@ -1,7 +1,7 @@
 ---
 title: 'Prompt caching is a design property, not a billing detail'
 description: 'An agent re-sends 95% of its prompt every turn. Whether you pay full price again is designed, not billed.'
-pubDate: 2026-06-11
+pubDate: 2026-06-26
 tags: [ai, agents]
 draft: true
 ---
