@@ -6,7 +6,7 @@ tags: [agents, ai, effect]
 draft: true
 ---
 
-Every coding agent has the same anatomy at the bottom: a loop that sends a pile of text to a model, reads the reply, runs some tools, appends the tool results to the pile, and sends the pile again. The pile is the **context** — everything the model can see while producing its next token. It is the agent's entire working memory, and the word *entire* is doing real work: a model call is stateless. Nothing persists between requests on the provider's side. Whatever isn't in the context didn't happen.
+Every coding agent has the same anatomy at the bottom: a loop that sends a pile of text to a model, reads the reply, runs some tools, appends the tool results to the pile, and sends the pile again. The pile is the **context** — everything the model can see while producing its next token, and the agent's entire working memory, because the model itself keeps nothing between calls. (Why a stateless model makes that transcript the *only* memory, and how it's persisted as an append-only log, is a post of its own.) This post starts a layer up — with what happens to the pile as it grows.
 
 That pile lives inside a hard budget called the **context window** — the maximum number of tokens (roughly, word fragments; about four characters each) a model accepts in one request. Window sizes sound generous in 2026 — frontier models take a million tokens — and they are not generous at all, because an agent is a machine for filling them. One `cat` of a build log is 80,000 characters. One enthusiastic `grep` is 40,000. Every tool result lands in the pile and *stays* there, re-sent on every subsequent call, because the loop is append-and-resend. Left alone, a long session doesn't fail loudly; it degrades — the model starts forgetting constraints from hour one, re-reading files it already read, paying more per turn for worse answers — and then it hits the wall and the session is simply over.
 
@@ -14,38 +14,7 @@ So here's the claim this post argues: the context window is the scarcest resourc
 
 ## What one turn actually sends
 
-Before managing the thing, look at the thing. Strip away every abstraction and one agent turn is this:
-
-```ts
-const request = [
-  systemPrompt,    // rebuilt fresh every turn — instructions, tools, rules
-  ...history,      // every prior message, verbatim, growing forever
-  newUserMessage,
-]
-// send → model replies (text and/or tool calls) → append reply + tool
-// results to history → send again
-```
-
-That's the whole data structure. Now the real version. In [efferent](https://github.com/xandreeddev/agent), `runAgent` assembles the pile for a turn from three parts — and the highlighted line is the single point where everything this post discusses converges:
-
-```ts title="packages/core/src/usecases/runAgent.ts"
-// A checkpoint is a fold point: { messagePosition, summary }.
-const checkpoint = yield* store.getLatestCheckpoint(conversationId) // null = never folded
-const active = yield* store.listActive(conversationId)
-const prefix = checkpoint === null ? [] : [handoffToMessage(checkpoint.summary)]
-
-const userMsg: AgentMessage = { role: 'user', content: userPrompt }
-yield* store.append(conversationId, userMsg)
-
-const result = yield* runAgentLoop({
-  system: config.systemPrompt,
-  messages: [...prefix, ...active, userMsg], // [!code highlight]
-  toolkit: config.toolkit,
-  maxSteps: settings.maxSteps,
-})
-```
-
-Ignore the checkpoint machinery for now (it's the folding section's subject) and enumerate what the model receives, with rough weights:
+Before managing the thing, look at the thing. How a turn's pile gets assembled and persisted — load the folded summary, load the active history, append the new prompt, run the loop, persist exactly what it produced — is the foundation post's subject (a post of its own). Take that assembled pile as given and weigh what the model actually receives each turn, with rough weights:
 
 - **The system prompt** — identity, behavioral rules, a dozen tool descriptions, the sub-agent routing policy, plus three injected sections we'll meet in a moment (a skills index, discovered instruction files, ambient folder context). In [efferent](https://github.com/xandreeddev/agent) the fixed part is roughly 2,500 tokens. Rebuilt every turn, byte-identical.
 - **The handoff prefix** — at most one synthetic message carrying a summary of everything already folded away. A few hundred tokens, or absent entirely.
@@ -133,32 +102,13 @@ Note what these three mechanisms have in common, because it's the actual lesson:
 
 ## Compression at the edges
 
-Stage two guards the fast-growing part: tool results. The moment a result enters the message buffer — before the model, the store, or anything else sees it — any string over a budget (default 4,000 tokens, ~16,000 characters) is compressed *once, at append time*: structure-aware where the output has shape (grep output keeps every file with its first matches and exact counts; bash logs keep errors, tracebacks, and summary lines), a blind head-plus-tail clip where it doesn't, always ending in a marker that names what was dropped and how to get it back — `[…headroom: ~4509 tokens of this Bash output omitted. To retrieve it, re-run the tool narrower — read_file with offset/limit, a more specific grep…]`. The discipline that matters for *this* post is the "once, at append time" part: nothing already in the buffer is ever rewritten, because providers cache prompts by byte-stable prefix and a single edited byte invalidates everything after it. Clipped on entry, immutable thereafter. The compression machinery itself — the structure detection, the reversible markers, the fast-model digests woven into them — is one stage of this lifecycle and a post of its own.
+Stage two guards the fast-growing part: tool results. The moment a result enters the message buffer — before the model, the store, or anything else sees it — any string over a budget (default 4,000 tokens, ~16,000 characters) is compressed *once, at append time*: structure-aware where the output has shape (grep output keeps every file with its first matches and exact counts; bash logs keep errors, tracebacks, and summary lines), a blind head-plus-tail clip where it doesn't, always ending in a marker that names what was dropped and how to get it back — `[…headroom: ~4509 tokens of this Bash output omitted. To retrieve it, re-run the tool narrower — read_file with offset/limit, a more specific grep…]`. The discipline that matters for *this* post is the "once, at append time" part: nothing already in the buffer is ever rewritten — the append-only invariant that keeps provider caches warm, which is a post of its own. Clipped on entry, immutable thereafter. The compression machinery itself — the structure detection, the reversible markers, the fast-model digests woven into them — is one stage of this lifecycle and a post of its own.
 
 ## Folding: the handoff
 
 Admission control bounds the prompt; edge compression bounds each result. Neither touches the real killer: the *accumulation*. Forty turns of perfectly reasonable, individually-clipped messages will still fill a window. Eventually you need to shrink history itself — and this is where most agent tooling reaches for the blunt instrument called "compaction": summarize the conversation, throw away the originals, hope the summary was good. The fold in [efferent](https://github.com/xandreeddev/agent) — called a **handoff** — is built on a refusal to do the second part. Summaries are views. Originals are forever.
 
-The mechanism rests on one storage decision, visible in the conversation store's port (a port here is an Effect service interface — the persistence behind it is SQLite or Postgres, and the contract doesn't care):
-
-```ts title="packages/core/src/ports/ConversationStore.ts"
-export class ConversationStore extends Context.Tag('@efferent/core/ConversationStore')<
-  ConversationStore,
-  {
-    readonly append: (id: ConversationId, msg: AgentMessage) => Effect.Effect<void, StoreError>
-    /** ALL messages, in order — the permanent record, for browsing. */
-    readonly list: (id: ConversationId) => Effect.Effect<ReadonlyArray<AgentMessage>, StoreError>
-    /** Record a fold at the current head. Original rows are never modified. */
-    readonly checkpoint: (id: ConversationId, summary: string) => Effect.Effect<void, StoreError>
-    readonly getLatestCheckpoint: (id: ConversationId) => Effect.Effect<Checkpoint | null, StoreError>
-    /** Only the real rows AFTER the latest fold — what the agent loads. */
-    readonly listActive: (id: ConversationId) => Effect.Effect<ReadonlyArray<AgentMessage>, StoreError> // [!code highlight]
-    // …
-  }
->() {}
-```
-
-Two read paths, one truth. `list` returns everything that ever happened — the permanent record. `listActive` returns only the messages *after* the latest checkpoint — the working view. A `checkpoint` is just a row: *at message position N, this summary stands in for everything up to and including N* (the position is computed atomically inside the store, in the same statement that writes the row, so a concurrent append can't slip a message under the fold). Folding never deletes, never rewrites, never compacts rows. It moves a boundary. The loaded view narrows; the record doesn't.
+The mechanism rests on one storage decision: the conversation store offers two read paths over the same immutable rows — `list`, the permanent record, and `listActive`, only the messages after the latest checkpoint. A **checkpoint** is a fold row that says *this summary stands in for everything up to position N*; it deletes nothing, it moves a boundary. That store and its append-only guarantee are the foundation post's subject (a post of its own); what matters here is what folding *does* with those two read paths — the loaded view narrows, the record doesn't.
 
 Creating a fold is the `:handoff` command, and the use case is short enough to read whole:
 
