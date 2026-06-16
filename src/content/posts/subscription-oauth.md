@@ -3,6 +3,9 @@ title: 'Subscription OAuth is the hard half of multi-provider auth'
 description: 'API keys are the easy case. Subscription OAuth — PKCE, refresh races, header shaping — behind the same port.'
 pubDate: 2026-06-24
 tags: [effect, agents, typescript]
+series:
+  name: 'Building a coding agent'
+  order: 4
 draft: true
 ---
 

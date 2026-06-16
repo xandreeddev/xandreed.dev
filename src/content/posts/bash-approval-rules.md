@@ -3,6 +3,9 @@ title: 'Most approval prompts should never render'
 description: 'How a fast-tier LLM judge waves ordinary shell work through silently — and why the worst it can do is show a dialog.'
 pubDate: 2026-06-08
 tags: [agents, effect, ux]
+series:
+  name: 'Building a coding agent'
+  order: 6
 ---
 
 A coding agent that can't run shell commands is a very expensive autocomplete. `bun test`, `git diff`, `rg`, `tsc --noEmit` — that's the texture of real development work, so the agent gets a shell, and now you own a design problem that gets filed under *security* but is mostly **attention rationing**: the human in the loop has a fixed budget of attention per session, and the approval gate is the component that decides what spends it. Yes, a yes/no dialog asked forty times an hour trains a rubber-stamp reflex — that's true, and it's also all the prompt-fatigue argument this post needs.

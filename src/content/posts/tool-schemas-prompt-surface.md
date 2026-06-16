@@ -3,6 +3,9 @@ title: 'The model never reads your handler'
 description: 'A tool schema is prompt surface — the descriptions and annotations are the only docs a model reads before it acts.'
 pubDate: 2026-06-13
 tags: [ai, agents]
+series:
+  name: 'Building a coding agent'
+  order: 5
 ---
 
 Somewhere in your agent's transcript there's a turn like this: the model rewrites a whole file with `write_file` when a two-line edit would do, or calls `edit_file` with an argument shape it invented, or resumes a stale sub-agent for a task that deserved a fresh one. The instinct is to blame the model — too small, too eager, badly trained.

@@ -3,6 +3,9 @@ title: 'Error messages are prompt engineering now'
 description: "An agent's failure strings are read by the model that caused them — each should name what happened and the next move."
 pubDate: 2026-07-08
 tags: [agents, ai, ux]
+series:
+  name: 'Building a coding agent'
+  order: 8
 draft: true
 ---
 

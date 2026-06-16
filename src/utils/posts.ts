@@ -27,12 +27,52 @@ export function seriesPosts(posts: Post[], name: string): Post[] {
     .sort((a, b) => (a.data.series?.order ?? 0) - (b.data.series?.order ?? 0));
 }
 
-/** A rendered series-banner entry. */
+/** URL slug for a series display name ("Effect, from zero" → "effect-from-zero"). */
+export const seriesSlug = (name: string): string =>
+  name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+/** Every distinct series with its ordered parts, sorted by name. */
+export function allSeries(posts: Post[]): { name: string; slug: string; parts: Post[] }[] {
+  const names = [...new Set(posts.flatMap((p) => (p.data.series ? [p.data.series.name] : [])))];
+  return names
+    .map((name) => ({ name, slug: seriesSlug(name), parts: seriesPosts(posts, name) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** A rendered series entry. Draft parts link to /drafts (the only access until shipped). */
 export interface SeriesPart {
   id: string;
   title: string;
   href: string;
+  draft: boolean;
   current: boolean;
+}
+
+/** Build series entries from the full arc: live parts → /posts, drafts → /drafts. */
+export function toSeriesParts(posts: Post[], name: string, currentId: string): SeriesPart[] {
+  return seriesPosts(posts, name).map((p) => ({
+    id: p.id,
+    title: p.data.title,
+    href: p.data.draft ? `/drafts/${p.id}/` : `/posts/${p.id}/`,
+    draft: p.data.draft,
+    current: p.id === currentId,
+  }));
+}
+
+/** Fail the build on a malformed series (duplicate order within one series). */
+export function assertSeriesIntegrity(posts: Post[]): void {
+  const orders = new Map<string, number[]>();
+  for (const p of posts) {
+    const s = p.data.series;
+    if (!s) continue;
+    orders.set(s.name, [...(orders.get(s.name) ?? []), s.order]);
+  }
+  for (const [name, list] of orders) {
+    const dupes = [...new Set(list.filter((o, i) => list.indexOf(o) !== i))];
+    if (dupes.length > 0) {
+      throw new Error(`Series "${name}" has duplicate order value(s): ${dupes.join(', ')}`);
+    }
+  }
 }
 
 export const isoDate = (d: Date): string => d.toISOString().slice(0, 10);

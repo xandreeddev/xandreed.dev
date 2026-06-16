@@ -1,0 +1,43 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getAllPosts, allSeries, assertSeriesIntegrity } from '../../utils/posts';
+
+const all = await getAllPosts();
+assertSeriesIntegrity(all); // build-time guard: throws on a duplicate order within a series
+const series = allSeries(all).filter((s) => s.parts.length >= 2);
+---
+
+<Base
+  title="Series — xandreed"
+  description="Multi-part series — ordered reading paths through the blog."
+>
+  <div class="container">
+    <section class="intro">
+      <p class="label">Series</p>
+      <h1>Reading paths</h1>
+      <p class="sub">
+        Ordered, multi-part arcs. Standalone posts live on the <a href="/">home page</a>.
+      </p>
+    </section>
+    <section class="post-list" aria-label="All series">
+      {
+        series.map((s) => (
+          <div class="series-card">
+            <a class="series-card-title" href={`/series/${s.slug}/`}>
+              {s.name}
+            </a>
+            <span class="series-card-meta">{s.parts.length} parts</span>
+            <ol class="series-card-list">
+              {s.parts.map((p) => (
+                <li>
+                  {p.data.title}
+                  {p.data.draft && <span class="draft-badge">draft</span>}
+                </li>
+              ))}
+            </ol>
+          </div>
+        ))
+      }
+    </section>
+  </div>
+</Base>

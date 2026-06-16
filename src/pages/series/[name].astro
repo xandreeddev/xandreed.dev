@@ -1,0 +1,52 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getAllPosts, allSeries, type Post } from '../../utils/posts';
+
+export async function getStaticPaths() {
+  const all = await getAllPosts();
+  return allSeries(all)
+    .filter((s) => s.parts.length >= 2)
+    .map((s) => ({
+      params: { name: s.slug },
+      props: { name: s.name, parts: s.parts },
+    }));
+}
+
+interface Props {
+  name: string;
+  parts: Post[];
+}
+
+const { name, parts } = Astro.props;
+---
+
+<Base
+  title={`${name} — series — xandreed`}
+  description={`The “${name}” series — ${parts.length} posts in reading order.`}
+>
+  <div class="container">
+    <section class="intro">
+      <p class="label"><a href="/series/">Series</a></p>
+      <h1>{name}</h1>
+      <p class="sub">{parts.length} posts, in reading order. Drafts are previews until they ship.</p>
+    </section>
+    <section class="post-list" aria-label={`${name} series`}>
+      <ol class="series-index">
+        {
+          parts.map((p, i) => (
+            <li>
+              <span class="num">{i + 1}</span>
+              <a href={p.data.draft ? `/drafts/${p.id}/` : `/posts/${p.id}/`}>
+                <span class="t">
+                  {p.data.title}
+                  {p.data.draft && <span class="draft-badge">draft</span>}
+                </span>
+                <span class="d">{p.data.description}</span>
+              </a>
+            </li>
+          ))
+        }
+      </ol>
+    </section>
+  </div>
+</Base>

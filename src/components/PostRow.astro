@@ -17,6 +17,7 @@ const { post, base = '/posts' } = Astro.props;
       {post.data.title}
       {post.data.draft && <span class="draft-badge">draft</span>}
     </span>
+    {post.data.series && <span class="row-series">{post.data.series.name}</span>}
     <span class="desc">{post.data.description}</span>
   </span>
 </a>

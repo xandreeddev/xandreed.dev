@@ -15,6 +15,7 @@ export async function GET(context) {
       description: post.data.description,
       pubDate: post.data.pubDate,
       link: `/posts/${post.id}/`,
+      categories: post.data.series ? [post.data.series.name] : undefined,
     })),
   });
 }

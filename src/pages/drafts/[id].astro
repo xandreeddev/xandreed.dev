@@ -3,7 +3,7 @@ import { render } from 'astro:content';
 import Base from '../../layouts/Base.astro';
 import Toc from '../../components/Toc.astro';
 import SeriesBanner from '../../components/SeriesBanner.astro';
-import { getDrafts, getAllPosts, isoDate, readingTime, seriesPosts, type Post, type SeriesPart } from '../../utils/posts';
+import { getDrafts, getAllPosts, isoDate, readingTime, seriesSlug, toSeriesParts, type Post, type SeriesPart } from '../../utils/posts';
 
 // Unlisted draft previews. Tags render as plain text (a draft's tag page may
 // not exist in prod), and prev/next stays within /drafts. Series banners show
@@ -14,14 +14,6 @@ export async function getStaticPaths() {
   const all = await getAllPosts();
   return drafts.map((post, i) => {
     const series = post.data.series;
-    const seriesParts: SeriesPart[] = series
-      ? seriesPosts(all, series.name).map((p) => ({
-          id: p.id,
-          title: p.data.title,
-          href: p.data.draft ? `/drafts/${p.id}/` : `/posts/${p.id}/`,
-          current: p.id === post.id,
-        }))
-      : [];
     return {
       params: { id: post.id },
       props: {
@@ -29,7 +21,8 @@ export async function getStaticPaths() {
         newer: drafts[i - 1] ?? null,
         older: drafts[i + 1] ?? null,
         seriesName: series?.name ?? null,
-        seriesParts,
+        seriesSlug: series ? seriesSlug(series.name) : null,
+        seriesParts: series ? toSeriesParts(all, series.name, post.id) : [],
       },
     };
   });
@@ -40,10 +33,11 @@ interface Props {
   newer: Post | null;
   older: Post | null;
   seriesName: string | null;
+  seriesSlug: string | null;
   seriesParts: SeriesPart[];
 }
 
-const { post, newer, older, seriesName, seriesParts } = Astro.props;
+const { post, newer, older, seriesName, seriesSlug, seriesParts } = Astro.props;
 const { Content, headings } = await render(post);
 const minutes = readingTime(post.body ?? '');
 ---
@@ -63,7 +57,7 @@ const minutes = readingTime(post.body ?? '');
         <h1>{post.data.title}</h1>
         <p class="lede">{post.data.description}</p>
       </header>
-      {seriesName && <SeriesBanner name={seriesName} parts={seriesParts} />}
+      {seriesName && seriesSlug && <SeriesBanner name={seriesName} slug={seriesSlug} parts={seriesParts} />}
       <Toc headings={headings} />
       <div class="prose">
         <Content />

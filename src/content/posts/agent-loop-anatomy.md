@@ -3,6 +3,9 @@ title: 'An agent loop is a while loop with good manners'
 description: 'One agent turn, dissected: a plain while loop whose exits, hooks, and recovery paths are the actual engineering.'
 pubDate: 2026-06-17
 tags: [agents, effect, ai]
+series:
+  name: 'Building a coding agent'
+  order: 1
 draft: true
 ---
 

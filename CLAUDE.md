@@ -24,14 +24,16 @@ in dev. When touching the vector world or touch controls, test with real pointer
 | --- | --- |
 | `src/layouts/Base.astro` | Head/SEO, font imports per style, FOUC-guard inline script, header + style switcher, copy-button injector, lazy world bootstrap |
 | `src/pages/index.astro` | Homepage — intro + posts grouped by UTC year |
-| `src/pages/posts/[id].astro` | Post page — TOC, reading time, tags, draft badge, older/newer nav |
+| `src/pages/posts/[id].astro` | Post page — TOC, reading time, tags, draft badge, older/newer nav, series banner |
 | `src/pages/tags/[tag].astro` | Tag listings (tags derived from non-draft posts in prod) |
+| `src/pages/series/[name].astro` + `index.astro` | Per-series index + the series directory; ordered parts, full arc incl. drafts (`index.astro` runs `assertSeriesIntegrity`) |
 | `src/pages/rss.xml.js` | RSS endpoint, own draft filter |
 | `src/pages/404.astro` | Terminal-styled 404; inline script echoes `location.pathname` |
-| `src/components/PostRow.astro` | Whole-row post link (date, title, description) |
+| `src/components/PostRow.astro` | Whole-row post link (date, title, description, series hint) |
+| `src/components/SeriesBanner.astro` | Top-of-post series box: "Part N of M" + ordered part list (live → /posts, drafts → /drafts); renders only with ≥2 parts |
 | `src/components/Toc.astro` | h2/h3 TOC; desktop `<nav>` + mobile `<details>`, rendered only with ≥2 headings |
-| `src/utils/posts.ts` | `getPosts()` (draft filter + desc sort), `isoDate`, `readingTime` |
-| `src/content.config.ts` | `posts` collection schema |
+| `src/utils/posts.ts` | `getPosts()`/`getDrafts()`/`getAllPosts()`, `isoDate`, `readingTime`, series helpers (`seriesPosts`/`allSeries`/`toSeriesParts`/`seriesSlug`/`assertSeriesIntegrity`) |
+| `src/content.config.ts` | `posts` collection schema (incl. optional `series: { name, order }`) |
 | `src/styles/` | `global.css` = token contract + default style (phosphor); one file per other style |
 | `src/scripts/vector-world.js` | The flyable star system (~2.5k lines), lazy-loaded only for `vector` |
 | `src/scripts/sodium-world.js` | The night-drive game (~1.5k lines), lazy-loaded only for `sodium` |
@@ -83,11 +85,22 @@ description: 'One-sentence lede for lists and meta tags.'
 pubDate: 2026-06-12
 tags: [effect, agents]   # lowercase single words — tags are used raw as URL segments
 draft: true              # visible in dev; excluded from build, RSS, sitemap, tag pages
+series:                  # optional — groups ordered related posts
+  name: 'Effect, from zero'  # display + grouping key; slugified for /series/<slug>/
+  order: 1                   # reading order, independent of pubDate
 ```
 
 There is **no future-date scheduling**: a post with tomorrow's `pubDate` publishes on
 the next push. Commit a post to `main` only when it should go live.
 `typography-test.md` is a permanent kitchen-sink draft — never remove its `draft: true`.
+
+A `series` block groups ordered posts. A banner renders at the top of each member that
+has **≥2 visible parts**, and `/series/<slug>/` lists the arc. Membership shows the
+**full arc** (live + draft) everywhere — draft parts are marked and link to their
+`/drafts/` preview; live parts link to `/posts/`. `order` is reading order (not date);
+duplicate orders within one series fail the build (`assertSeriesIntegrity`). Current
+series: *Effect, from zero* · *Effect in practice* · *How an agent remembers* ·
+*Building a coding agent*.
 
 ## Vector world
 

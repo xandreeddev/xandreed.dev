@@ -3,20 +3,13 @@ import { render } from 'astro:content';
 import Base from '../../layouts/Base.astro';
 import Toc from '../../components/Toc.astro';
 import SeriesBanner from '../../components/SeriesBanner.astro';
-import { getPosts, isoDate, readingTime, seriesPosts, type Post, type SeriesPart } from '../../utils/posts';
+import { getPosts, getAllPosts, isoDate, readingTime, seriesSlug, toSeriesParts, type Post, type SeriesPart } from '../../utils/posts';
 
 export async function getStaticPaths() {
-  const posts = await getPosts();
+  const posts = await getPosts(); // live pages to build
+  const all = await getAllPosts(); // full arc (live + draft) for series banners
   return posts.map((post, i) => {
     const series = post.data.series;
-    const seriesParts: SeriesPart[] = series
-      ? seriesPosts(posts, series.name).map((p) => ({
-          id: p.id,
-          title: p.data.title,
-          href: `/posts/${p.id}/`,
-          current: p.id === post.id,
-        }))
-      : [];
     return {
       params: { id: post.id },
       props: {
@@ -24,7 +17,8 @@ export async function getStaticPaths() {
         newer: posts[i - 1] ?? null,
         older: posts[i + 1] ?? null,
         seriesName: series?.name ?? null,
-        seriesParts,
+        seriesSlug: series ? seriesSlug(series.name) : null,
+        seriesParts: series ? toSeriesParts(all, series.name, post.id) : [],
       },
     };
   });
@@ -35,10 +29,11 @@ interface Props {
   newer: Post | null;
   older: Post | null;
   seriesName: string | null;
+  seriesSlug: string | null;
   seriesParts: SeriesPart[];
 }
 
-const { post, newer, older, seriesName, seriesParts } = Astro.props;
+const { post, newer, older, seriesName, seriesSlug, seriesParts } = Astro.props;
 const { Content, headings } = await render(post);
 const minutes = readingTime(post.body ?? '');
 ---
@@ -58,7 +53,7 @@ const minutes = readingTime(post.body ?? '');
         <h1>{post.data.title}</h1>
         <p class="lede">{post.data.description}</p>
       </header>
-      {seriesName && <SeriesBanner name={seriesName} parts={seriesParts} />}
+      {seriesName && seriesSlug && <SeriesBanner name={seriesName} slug={seriesSlug} parts={seriesParts} />}
       <Toc headings={headings} />
       <div class="prose">
         <Content />
