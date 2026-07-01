@@ -9,7 +9,7 @@ Agent codebases have a geography problem. Everything that *decides* how the agen
 
 The fix is not a platform. **Evals are unit tests for behavior, and nobody puts their unit tests in a different repo.**
 
-This post builds the idea up from zero — what an eval actually *is*, one piece at a time — and then walks the real harness inside [efferent](https://github.com/xandreeddev/efferent), the coding agent I'm building on Effect: a few-hundred-line framework, an environment that runs the *actual* agent in a disposable world, and three production suites, including one that exists to pin a prompt bug I actually shipped. Every claim comes with the receipt.
+This post builds the idea up from zero — what an eval actually *is*, one piece at a time — and then walks the real harness inside [efferent](https://github.com/xandreeddev/efferent), the coding agent I'm building on Effect: a few-hundred-line framework, an environment that runs the *actual* agent in a disposable world, and its production suites — three of which this post walks, at three deliberately different altitudes, including one that exists to pin a prompt bug I actually shipped. Every claim comes with the receipt.
 
 ## The drift problem
 
@@ -27,13 +27,13 @@ Colocation collapses all three. The argument isn't tidiness — it's **latency o
 
 ```
 packages/
-├── core/       prompts, ports, tools — the behavior being judged
-├── adapters/   provider SDKs + IO
-├── cli/        composition root + TUI
-└── evals/      the judges, in the same dependency graph
+├── sdk-core/      prompts, ports, tools — the behavior being judged
+├── sdk-adapters/  provider SDKs + IO
+├── code/          composition root + TUI
+└── evals/         the judges, in the same dependency graph
 ```
 
-`packages/evals` imports the *real* system prompt builder, the *real* agent loop, and the *real* toolkit from `core`. There is no copy of the prompt anywhere. When a tool description changes, the next eval run measures the new description, automatically, because there is only one; when a type the suites depend on changes, the eval package stops compiling and tells you so. Drift requires two copies. There's one.
+`packages/evals` imports the *real* system prompt, the *real* agent loop, and the *real* toolkit — the same modules the product ships on. There is no copy of the prompt anywhere. When a tool description changes, the next eval run measures the new description, automatically, because there is only one; when a type the suites depend on changes, the eval package stops compiling and tells you so. Drift requires two copies. There's one.
 
 The rest of this post is the anatomy of that fourth package.
 
@@ -311,7 +311,7 @@ export const runCoder = (
 
 The options are cost controls disguised as test fixtures. `allowTools` turns the loop's before-tool-call hook into an allowlist: a disallowed call is *blocked with a reason the model can read* — an ordinary tool failure, not a crash — so a "read-only" case is read-only by construction, not by hoping the prompt behaves. `stopAfterFirstToolTurn` ends the loop after the first turn that issues tool calls, bounding a case to roughly **one** LLM call. And the same hook that enforces the allowlist records every tool name into a `Ref`, which is how `CoderRun.tools` ends up carrying call order — the typed output the scorers were promised. `readback` snapshots named files in the instant before the workspace evaporates, so edit suites can assert on what's actually on disk.
 
-That's the whole machine. Now the three suites that use it — deliberately at three different altitudes.
+That's the whole machine. Now three of the suites that use it — deliberately at three different altitudes. (efferent has grown a fair few more since — a graded quality scorecard, a hidden-test feature suite, statistical-significance tooling — but these three are the ones that teach the shape.)
 
 ## Suite one: the agent's first move
 
@@ -468,7 +468,7 @@ The first scorer is the bug, immortalized as a regex: an output matching "let me
 ## Running it
 
 ```bash
-bun run eval                        # all three suites
+bun run eval                        # every suite
 bun run eval handoff coder-edit     # a subset, by name
 bun run eval tool-selection --json  # machine-readable report
 ```
@@ -509,7 +509,7 @@ Colocated evals are the right default; they are not free, and the bills are wort
 
 **Judges can be wrong.** `llmJudge` is a model grading a model, with documented failure modes — leniency toward plausible-sounding text chief among them. The mitigations here are real but partial: a conservative system prompt, fail-closed parsing, and — most importantly — never letting a judge stand alone. In `coder-edit` the judge sits on top of a deterministic floor; if `edit_applied` says the strings aren't in the file, no generous judge can drag the case to 1.0. A judge-only suite gating CI is a footgun; a judge bounded by predicates is a sensor.
 
-**And the framework had to be written.** That's a cost too — eval frameworks are a classic yak. The plan, written down before any of this existed, was "Evalite until it actively hurts," and Evalite's `data → task → scorers` shape is visibly the skeleton this framework keeps — the lineage is right there in the type names. It hurt at three points simultaneously: a native `better-sqlite3` dependency that fought the runtime, coupling to the Vercel AI SDK while [efferent](https://github.com/xandreeddev/efferent) had moved to `@effect/ai`, and Node-vs-Bun runner APIs. Two pulls finished the argument, and both are really one pull — types: suites needed to *provide Layers* (the whole environment story above), and scorers wanted the typed `CoderRun` — tools in call order, files off disk — instead of strings. The replacement is about 340 lines across four files, unit-tested, with no persistence and no UI. Borrow a framework's shape; own its execution model only when the integration tax exceeds the rewrite. It eventually did. Yours may never — in which case, use Evalite.
+**And the framework had to be written.** That's a cost too — eval frameworks are a classic yak. The plan, written down before any of this existed, was "Evalite until it actively hurts," and Evalite's `data → task → scorers` shape is visibly the skeleton this framework keeps — the lineage is right there in the type names. It hurt at three points simultaneously: a native `better-sqlite3` dependency that fought the runtime, coupling to the Vercel AI SDK while [efferent](https://github.com/xandreeddev/efferent) had moved to `@effect/ai`, and Node-vs-Bun runner APIs. Two pulls finished the argument, and both are really one pull — types: suites needed to *provide Layers* (the whole environment story above), and scorers wanted the typed `CoderRun` — tools in call order, files off disk — instead of strings. The replacement started at about 340 lines across four files, unit-tested, with no persistence and no UI (it has since grown well past that — bootstrap-significance testing, judge-agreement scoring, a held-out feature suite — which is its own post). Borrow a framework's shape; own its execution model only when the integration tax exceeds the rewrite. It eventually did. Yours may never — in which case, use Evalite.
 
 ## The riskiest diffs are prose
 
