@@ -1,7 +1,7 @@
 ---
 title: 'Zero-config storage: Postgres is an option, not a prerequisite'
 description: 'A local tool should remember on first run — SQLite by default, migrations in the bundle, Postgres one env var away.'
-pubDate: 2026-07-17
+pubDate: 2026-08-18
 tags: [effect, agents, ux]
 series:
   name: 'How an agent remembers'
@@ -123,21 +123,19 @@ The fix is to stop treating migrations as files the program *finds* and start tr
 ```ts title="packages/sdk-adapters/src/database/migrator.ts"
 import sqlite0001 from './migrations-sqlite/0001_init.js'
 import sqlite0002 from './migrations-sqlite/0002_context_tree.js'
-// … 0003–0006
+// … 0003–0009
 
 const sqliteLoader = Migrator.fromRecord({ // [!code highlight]
   '0001_init': sqlite0001,
   '0002_context_tree': sqlite0002,
   '0003_workspace_ref': sqlite0003,
-  '0004_seed_count': sqlite0004,
-  '0005_conversation_title': sqlite0005,
-  '0006_node_title': sqlite0006,
+  // … '0004_seed_count' through '0009_node_kind'
 })
 ```
 
 `Migrator.fromRecord` takes a static map from migration name to migration effect. Because each migration is an imported module, the bundler treats it like any other dependency and inlines it — the schema's entire history rides inside the artifact. Nothing about the migrator's contract changes: it still consults its ledger, still runs only what's pending, still works against a database from any previous version. Only the *loading* changed, from "scan a directory I hope exists" to "here is the list, at compile time."
 
-The record looks like boilerplate — it's the load-bearing kind. The explicit imports are what make the bundle self-contained, and the explicit keys are what make ordering reviewable in a diff. When migration eleven lands, it shows up in code review as one import and one record entry, not as a file the build process may or may not have copied.
+The record looks like boilerplate — it's the load-bearing kind. The explicit imports are what make the bundle self-contained, and the explicit keys are what make ordering reviewable in a diff. When the next migration lands, it shows up in code review as one import and one record entry, not as a file the build process may or may not have copied.
 
 ## Two stores, one database
 
@@ -175,7 +173,7 @@ export const StoresLive = Layer.unwrapEffect(
 )
 ```
 
-One `Layer.merge` of the two stores, one shared `Layer.provide` of the database underneath: one client, one migrator run, by construction. The highlighted line is the entire concurrency fix — the database layer appears *once*, so memoization has one value to memoize. Note also what this layer is, product-wise: the **whole** storage policy, in one expression. Read the env var, pick the engine, wire both stores over one stack. There is no second place where storage gets decided; the app's entry point takes `StoresLive` and is done.
+One `Layer.merge` of the two stores, one shared `Layer.provide` of the database underneath: one client, one migrator run, by construction. The highlighted line is the entire concurrency fix — the database layer appears *once*, so memoization has one value to memoize. Note also what this layer is, product-wise: the **whole** storage policy, in one expression. Read the env var, pick the engine, wire both stores over one stack. The app's entry point takes `StoresLive` and is done — and when the `:db` command (below) switches databases live, it builds the same shape for an explicit connection: two stores, one stack, one migrator run.
 
 The same shape pays again in tests: the eval environment swaps both stores for in-memory maps in one move — a story that's a post of its own.
 
@@ -183,37 +181,32 @@ The same shape pays again in tests: the eval environment swaps both stores for i
 
 Why ship Postgres support at all, if SQLite is the right answer for a single-user CLI? Because "single-user" is a today-fact, not a forever-fact, and some users arrive already past it. History you want shared across two machines. An agent running headless on a box you ssh into, with the history queried from your laptop. A team that wants one place to watch agent runs. The moment more than one machine needs the same memory, a file in one home directory stops being an answer — that's when a tool has *earned* a server database, and the upgrade should cost one value, not a rewrite.
 
-You already saw the env-var route: set `EFFERENT_DB_URL=postgres://…` and `StoresLive` builds the Postgres branch. For people who'd rather not manage env vars, the TUI has a `:db` command that persists the choice to config:
+You already saw the env-var route: set `EFFERENT_DB_URL=postgres://…` and `StoresLive` builds the Postgres branch. For people who'd rather not manage env vars, the TUI has a `:db` manager — a picker over named connections, plus command forms for adding and removing them:
 
-```ts title="packages/code/src/cli/actions/settings.ts"
-/** `:db` — show the active store, or write a new `dbUrl` to project/global config. */
+```ts title="packages/cli/src/cli/actions/settings.ts"
+/**
+ * `:db` — no args opens the manager picker; `:db pg <url>` / `:db sqlite [path]`
+ * add a named connection and switch to it live; `:db remove <name>` drops one.
+ * `global` targets the machine tier (default: this project).
+ */
 export const applyDb = (store: TuiStore, cwd: string, tokens: ReadonlyArray<string>) =>
   Effect.gen(function* () {
-    const wantGlobal = tokens.some((t) => t === 'global')
-    const args = tokens.filter((t) => t !== 'global')
+    const wantGlobal = tokens.some((t) => t.toLowerCase() === 'global')
+    const scope: ConfigScope = wantGlobal ? 'global' : 'local'
+    const args = tokens.filter((t) => t.toLowerCase() !== 'global')
     if (args.length === 0) {
-      return // ':db' alone: report what's actually connected, env override and all
+      return yield* openDbManager(store, cwd) // every configured connection, default marked
     }
-    const dbUrl =
-      args[0] === 'sqlite'
-        ? (args[1] ?? '') // '' → back to the zero-config default
-        : args.slice(1).join(' ').trim() // ':db pg postgres://…'
-    const cfgPath = wantGlobal
-      ? join(homedir(), '.efferent', 'config.json')
-      : join(cwd, '.efferent', 'config.json')
-    // … read-modify-write that file: set (or clear) its `dbUrl` key
-    store.pushBlock({
-      kind: 'info',
-      text: `database → ${maskDbUrl(dbUrl)} · saved · relaunch efferent to connect`, // [!code highlight]
-    })
+    // … parse ':db pg <url>' / ':db sqlite [path]' into a named connection, then:
+    yield* switchActiveDatabase(store, name, conn, cwd, { scope }) // [!code highlight]
   })
 ```
 
-Two honest details live in that snippet. First, the highlighted line says *relaunch* — the store is chosen at layer build, at boot, so `:db` writes intent rather than hot-swapping your history mid-conversation. At the next launch, a tiny pre-boot step reads `dbUrl` from project config (falling back to global) and seeds it into `EFFERENT_DB_URL` — a real env var always wins, config only fills the gap. Second, `wantGlobal`: storage scope is *per project* by default. One repo can point at a team Postgres while everything else stays on the local file.
+Two honest details live behind that highlighted call. First, the switch is **live** — `switchActiveDatabase` builds the new store on the spot (running any pending migrations against the target, exactly as boot would), persists the connection and the new default to config at the chosen scope, and **carries the current conversation across** by copying its messages, checkpoints, and title into the new store. Copying, not moving — the original stays intact in its own database, and the whole move is refused mid-turn. Second, `scope`: storage choice is *per project* by default. One repo can point at a team Postgres while everything else stays on the local file. At the next boot, a tiny pre-boot step reads the configured default and seeds it into `EFFERENT_DB_URL` — a real env var always wins, config only fills the gap.
 
 Here's the part that makes the hatch trustworthy rather than aspirational: **the same migrator architecture runs on both engines.** `Migrator.fromRecord`, the bundled-record trick, the single-stack rule — all identical; only the client layer and the record's contents differ. A fresh Postgres database gets schema'd up from nothing on first connect, exactly like the SQLite file did.
 
-What it costs is SQL portability, and the bill is real. There is no single migration history — there are two dialect-specific ones (ten Postgres migrations, six SQLite), because the engines genuinely differ: `uuid` becomes `TEXT`, `jsonb` becomes a JSON string in `TEXT`, `bigint` becomes `INTEGER`. The stores mirror each other but not literally — the Postgres queries carry `::uuid` and `::jsonb` casts, and the "first user message" preview is `content->>'content'` on Postgres versus `json_extract(content, '$.content')` on SQLite. Even *reading* differs: Postgres hands `jsonb` back as a parsed object, SQLite hands back a string, and one shared codec is the only place that knows:
+What it costs is SQL portability, and the bill is real. There is no single migration history — there are two dialect-specific ones (thirteen Postgres migrations, nine SQLite), because the engines genuinely differ: `uuid` becomes `TEXT`, `jsonb` becomes a JSON string in `TEXT`, `bigint` becomes `INTEGER`. The stores mirror each other but not literally — the Postgres queries carry `::uuid` and `::jsonb` casts, and the "first user message" preview is `content->>'content'` on Postgres versus `json_extract(content, '$.content')` on SQLite. Even *reading* differs: Postgres hands `jsonb` back as a parsed object, SQLite hands back a string, and one shared codec is the only place that knows:
 
 ```ts title="packages/sdk-adapters/src/database/messageCodec.ts"
 // Total: an unparseable string comes back as-is and fails the downstream

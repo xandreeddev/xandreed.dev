@@ -1,7 +1,7 @@
 ---
 title: 'The only safe moment to compress a tool output is before it becomes history'
 description: 'Cache-safe tool-output compression for agents: clip once at append time, behind a marker the model can reverse.'
-pubDate: 2026-07-01
+pubDate: 2026-07-17
 tags: [agents, effect, ai]
 draft: true
 ---

@@ -37,7 +37,7 @@ export type ApprovalDecision =
   | { readonly kind: 'allow'; readonly scope: 'once' | 'session' | 'project' } // [!code highlight]
   | { readonly kind: 'deny'; readonly reason?: string }
 
-export class Approval extends Context.Tag('@efferent/core/Approval')<
+export class Approval extends Context.Tag('@xandreed/sdk-core/Approval')<
   Approval,
   { readonly request: (req: ApprovalRequest) => Effect.Effect<ApprovalDecision> }
 >() {}
@@ -49,7 +49,7 @@ The highlighted line is the gate's whole UX, compressed. In the TUI, the modal o
 
 Here is the observation the auto mode is built on: most commands an agent runs are ordinary development actions inside folders the human already handed over. Listing, reading, searching, building, testing, version control — inside the project you opened the agent in, every one of those prompts has the same answer, and you know it before you finish reading the command. A gate that asks anyway isn't being careful; it's spending your attention on questions with known answers.
 
-So before any dialog, an unmatched command goes to the **judge**: one completion on the **fast** role — [efferent](https://github.com/xandreeddev/efferent)'s settings name for the model used in latency-sensitive helper calls (point it at something small with `:set fastModel`; unset, it falls back to the main model — the roles ride the runtime provider routing, a post of its own). The judge is asked a single question: *does this command stay inside the permitted folders, doing ordinary development work?* The **permitted folders** are the heart of the design — the working directory you opened the agent in, plus every folder a previous answer has granted. The prompt is short enough to read whole, and it's the best artifact in the feature:
+So before any dialog, an unmatched command goes to the **judge**: one completion on the **fast** role — [efferent](https://github.com/xandreeddev/efferent)'s settings name for the model used in latency-sensitive helper calls (point it at something small with `:set fastModel`; unset, it falls back to the general model — the roles ride the runtime provider routing, a post of its own). The judge is asked a single question: *does this command stay inside the permitted folders, doing ordinary development work?* The **permitted folders** are the heart of the design — the working directory you opened the agent in, plus every folder a previous answer has granted. The prompt is short enough to read whole, and it's the best artifact in the feature:
 
 ```ts title="packages/sdk-core/src/usecases/autoApproval.ts"
 export const buildJudgePrompt = (input: {
@@ -142,40 +142,45 @@ Why folders? Because that's the shape of the decision you actually made. When th
 
 Here's the whole cascade as the TUI implements it, condensed from the real layer:
 
-```ts title="packages/code/src/cli/approval.ts"
+```ts title="packages/cli/src/cli/approval.ts"
 const allowOnce = { kind: 'allow', scope: 'once' } as const
 
 request: (req) =>
-  gate.withPermits(1)(                       // 1-permit semaphore — one question at a time
-    Effect.gen(function* () {
-      const settings = yield* settingsStore.get()
-      if (settings.approvedBashRules?.includes(req.ruleKey)) return allowOnce // tier 1
-      if ((yield* Ref.get(sessionRules)).has(req.ruleKey)) return allowOnce   // tier 2
+  Effect.gen(function* () {
+    const settings = yield* settingsStore.get()
+    if (settings.approvedBashRules?.includes(req.ruleKey)) return allowOnce // tier 1
+    if ((yield* Ref.get(sessionRules)).has(req.ruleKey)) return allowOnce   // tier 2
 
-      let hint: { reason?: string; folder?: string } | null = null
-      if (settings.autoApprove !== false) {                                   // tier 3 — default ON
-        const permitted = [
-          req.cwd, // the standing grant // [!code highlight]
-          ...(settings.approvedFolders ?? []),
-          ...(yield* Ref.get(sessionFolders)),
-        ]
-        const outcome = yield* judgeApproval(req, permitted)
-        if (outcome.verdict === 'allow') return allowOnce // no modal; a dim info line
-        hint = outcome // the modal shows the judge's reason + named folder
-      }
+    let hint: { reason?: string; folder?: string } | null = null
+    if (settings.autoApprove !== false) {                                   // tier 3 — default ON
+      const permitted = [
+        req.cwd, // the standing grant // [!code highlight]
+        ...(settings.approvedFolders ?? []),
+        ...(yield* Ref.get(sessionFolders)),
+      ]
+      const outcome = yield* judgeApproval(req, permitted) // unserialized: parallel agents judge in parallel
+      if (outcome.verdict === 'allow') return allowOnce // no modal; a dim info line
+      hint = outcome // the modal shows the judge's reason + named folder
+    }
 
-      const decision = yield* ask(req, hint)                                  // tier 4 — park on a keystroke
-      if (decision.kind === 'allow' && decision.scope === 'project') {
-        yield* settingsStore.update((curr) =>
-          hint?.folder
-            ? { ...curr, approvedFolders: [...(curr.approvedFolders ?? []), hint.folder] }
-            : { ...curr, approvedBashRules: [...(curr.approvedBashRules ?? []), req.ruleKey] },
-        )
-      }
-      // … scope 'session' does the same into the in-memory Refs
-      return decision
-    }),
-  ),
+    const decision = yield* gate.withPermits(1)(                            // tier 4 — ONE modal at a time
+      Effect.gen(function* () {
+        // A waiter re-checks the ledgers on winning the permit: a grant made
+        // by the queue ahead of it answers this request without a second prompt.
+        if (yield* coveredNow(req, hint?.folder)) return allowOnce
+        return yield* ask(req, hint) // park on a keystroke
+      }),
+    )
+    if (decision.kind === 'allow' && decision.scope === 'project') {
+      yield* settingsStore.update((curr) =>
+        hint?.folder
+          ? { ...curr, approvedFolders: [...(curr.approvedFolders ?? []), hint.folder] }
+          : { ...curr, approvedBashRules: [...(curr.approvedBashRules ?? []), req.ruleKey] },
+      )
+    }
+    // … scope 'session' does the same into the in-memory Refs
+    return decision
+  }),
 ```
 
 A few lines earn their wages here. The grant branch at the bottom is the folder thesis in code: when the judge named a folder, the "project" answer appends it to `approvedFolders`; when it didn't — auto mode off, or a prompt with no folder in play — the answer falls back to granting the command's *rule*, the tier-1 mechanism we'll dissect next. Both ledgers are plain string arrays in the project's settings file:
@@ -189,7 +194,7 @@ approvedFolders: Schema.optional(Schema.Array(Schema.String)), // [!code highlig
 // absolute paths beyond the workspace root, granted when a command reached outside
 ```
 
-Then there's `gate.withPermits(1)` wrapping the whole thing — a one-permit **semaphore**, a counter of permits where holding the only one means exclusive access. It exists because approval requests arrive concurrently: [efferent](https://github.com/xandreeddev/efferent) fans work out to parallel sub-agents, and several can want bash in the same instant. The semaphore serializes them into single file, and because the ledger checks live *inside* the permit, each waiter re-checks the ledgers when its turn finally comes. Press **s** — allow for session — on the first sub-agent's `bun test`, and the identical requests queued behind it match the fresh session rule and dissolve without rendering anything. One keystroke, a whole queue answered.
+Then there's `gate.withPermits(1)` around the modal — a one-permit **semaphore**, a counter of permits where holding the only one means exclusive access. It exists because approval requests arrive concurrently: [efferent](https://github.com/xandreeddev/efferent) fans work out to parallel sub-agents, and several can want bash in the same instant. Deliberately, only the *human* is serialized — the judge runs outside the gate, so a bash-heavy fleet gets judged in parallel instead of queueing every command behind one modal — and because a waiter re-checks the ledgers when it finally wins the permit, one answer clears the whole line. Press **s** — allow for session — on the first sub-agent's `bun test`, and the identical requests queued behind it match the fresh session rule and dissolve without rendering anything. One keystroke, a whole queue answered.
 
 One more structural choice that's easy to miss: the session ledgers (`sessionRules`, `sessionFolders`) are `Ref`s — Effect's atomic mutable cells — created *outside* the layer, in the closure that builds it. The layer is rebuilt per agent run; the ledgers must outlive a turn, or "allow for session" would quietly mean "allow for the next few seconds."
 

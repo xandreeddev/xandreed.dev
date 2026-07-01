@@ -1,7 +1,7 @@
 ---
 title: 'An agent loop is a while loop with good manners'
 description: 'One agent turn, dissected: a plain while loop whose exits, hooks, and recovery paths are the actual engineering.'
-pubDate: 2026-06-17
+pubDate: 2026-07-03
 tags: [agents, effect, ai]
 series:
   name: 'Building a coding agent'
@@ -13,7 +13,7 @@ draft: true
 
 That's not a dismissal. It's the load-bearing observation of this post, because once the loop itself stops being magic, you can see where the engineering really lives: in what gets assembled each lap, in who decides when to stop, in what the loop tells the outside world, in what gets persisted, and in what happens when the model emits garbage. The edges, not the center.
 
-Everything below is lifted from [efferent](https://github.com/xandreeddev/efferent), the coding agent I'm building on Effect. Its entire loop is one ~250-line file, `agentLoop.ts`, and this post is a guided dissection of it — simplified where simplification teaches, but every claim checked against the real code.
+Everything below is lifted from [efferent](https://github.com/xandreeddev/efferent), the coding agent I'm building on Effect. Its entire loop is one file, `agentLoop.ts` (~600 lines, half of them comments), and this post is a guided dissection of it — simplified where simplification teaches, but every claim checked against the real code.
 
 ## One turn, in ten naive lines
 
@@ -46,7 +46,7 @@ What it deliberately does not do is iterate. Calling `generateText` again with t
 ```ts title="packages/sdk-core/src/usecases/agentLoop.ts"
 export const runAgentLoop = (input: RunAgentLoopInput) =>
   Effect.gen(function* () {
-    const maxSteps = input.maxSteps ?? 20
+    const maxSteps = input.maxSteps ?? 100
     let messages = input.messages
     let turnIndex = 0
     const newTail: AgentMessage[] = [] // everything the loop appends — more later
@@ -121,7 +121,7 @@ One ordering detail that will matter twice more in this post: assembly happens *
 
 ## Exits are policy, not accident
 
-The naive sketch had one exit and gave it to the model. The real loop has four, and each one is a decision somebody had to make on purpose.
+The naive sketch had one exit and gave it to the model. The real loop has five, and each one is a decision somebody had to make on purpose.
 
 **Exit 1 — the model is done.** The natural ending, but stated more defensively than the sketch:
 
@@ -136,7 +136,7 @@ stillWantedMore = true
 
 Both conjuncts, deliberately: a provider can report `'tool-calls'` while delivering a response with no decodable calls in it, and trusting the label alone would loop forever on a prompt the model has no further moves for.
 
-**Exit 2 — the step cap.** `while (turnIndex < maxSteps)` — 20 by default for the top-level agent, 80 for sub-agents, which have one job and a budget rather than a human watching. The cap is a backstop against a model that never stops asking, and the interesting part isn't the number, it's the *bookkeeping*: a capped run is not a finished run, and conflating the two produces a nasty failure mode. The last assistant text of a capped run is mid-thought narration — "now I'll update the second call site" — and any caller that surfaces it as the answer is presenting an abandoned thought as a deliverable. So the loop marks it:
+**Exit 2 — the step cap.** `while (turnIndex < maxSteps)` — 20 by default for the top-level agent, 200 for sub-agents, which have one job and a budget rather than a human watching. The cap is a backstop against a model that never stops asking, and the interesting part isn't the number, it's the *bookkeeping*: a capped run is not a finished run, and conflating the two produces a nasty failure mode. The last assistant text of a capped run is mid-thought narration — "now I'll update the second call site" — and any caller that surfaces it as the answer is presenting an abandoned thought as a deliverable. So the loop marks it:
 
 ```ts title="packages/sdk-core/src/usecases/agentLoop.ts"
 // Exhausted the step cap while the model still asked for tools → the last
@@ -177,7 +177,11 @@ onShouldStopAfterTurn: () =>
 
 The running sub-agent halts at its next boundary, the flag routes to the same `[stopped early …]` stamping as the step cap, and — note what's absent — the loop itself contains not one line about budgets. (The sub-agent tree this budget governs is a post of its own.)
 
-**Exit 4 — the give-up bound.** When the model's response doesn't even parse, the loop retries with a corrective — but only `MAX_MALFORMED = 3` times consecutively before failing the run outright. The mechanics get their own section below; for now it completes the inventory: model's choice, your cap, your caller's veto, your patience. Four exits, four owners, zero accidents.
+**Exit 4 — the give-up bound.** When the model's response doesn't even parse, the loop retries with a corrective — until the third consecutive malformed response (`MAX_MALFORMED = 3`) fails the run outright. The mechanics get their own section below.
+
+**Exit 5 — the no-progress breaker.** The newest exit, and the only one aimed at a model that's *working* but going nowhere: each turn's tool results are hashed into a progress signature, and a turn whose signature was already seen this run counts as stale. Three consecutive stale turns earn a one-time corrective nudge ("STOP repeating that call. Take a DIFFERENT concrete action…"); at five the loop force-stops, stamping an explicit `[stopped: … the run was looping]` marker so the caller reads a loop-stop, not an answer. Two details keep it honest: the signature is keyed on *results*, not arguments — a model can churn its arguments forever while learning nothing — and polling tools like `bash_output` are exempt, because an unchanged result from a poll is correct, not degenerate.
+
+That completes the inventory: model's choice, your cap, your caller's veto, your patience, your progress. Five exits, five owners, zero accidents.
 
 ## Hooks: the loop's only outward face
 
@@ -197,7 +201,7 @@ export interface AgentHooks<R = never> {
   readonly onAfterToolCall?: (e: AgentAfterToolCallEvent) => Effect.Effect<void, never, R>
   readonly onShouldStopAfterTurn?: (e: AgentShouldStopEvent) => Effect.Effect<boolean, never, R>
   readonly onAgentEnd?: (e: AgentEndEvent) => Effect.Effect<void, never, R>
-  // …sub-agent, skill-load, and helper-usage events elided
+  // …sub-agent, skill-load, helper-usage, and other driver events elided
 }
 ```
 
@@ -224,28 +228,26 @@ export const runAgent = (config, conversationId, userPrompt, hooks) =>
     // handoff summary standing in for everything folded away before it.
     const checkpoint = yield* store.getLatestCheckpoint(conversationId)
     const active = yield* store.listActive(conversationId)
-    const prefix = checkpoint !== null ? [handoffToMessage(checkpoint.summary)] : []
+    const prefix = checkpoint !== undefined ? [handoffToMessage(checkpoint.summary)] : []
 
     const userMsg: AgentMessage = { role: 'user', content: userPrompt }
     yield* store.append(conversationId, userMsg) // persist the prompt before risking the run
 
-    const result = yield* runAgentLoop({
+    return yield* runAgentLoop({
       system: config.systemPrompt,
       messages: [...prefix, ...active, userMsg],
       toolkit: config.toolkit,
       maxSteps: settings.maxSteps,
       hooks,
+      // Persist exactly what the loop appends, the turn it appends it —
+      // reported explicitly, never reconstructed by index arithmetic on a
+      // transformable buffer.
+      onTail: (msgs) => Effect.forEach(msgs, (m) => store.append(conversationId, m)), // [!code highlight]
     })
-
-    // Persist exactly what the loop appended — reported explicitly,
-    // never reconstructed by index arithmetic on a transformable buffer.
-    for (const m of result.newTail) yield* store.append(conversationId, m) // [!code highlight]
-
-    return result
   })
 ```
 
-Read the shape: load history, prepend the checkpoint's stand-in summary (in memory only — the store keeps the originals), persist the user's message eagerly so a crashed run still remembers the question, run the loop, persist the tail the loop *says* it grew. The doc comment on the `AgentResult` schema makes the rule explicit: persist `newTail`, never a reconstruction — reconstruction "silently breaks the moment a context transform reshapes the buffer mid-run."
+Read the shape: load history, prepend the checkpoint's stand-in summary (in memory only — the store keeps the originals), persist the user's message eagerly so a crashed run still remembers the question, then hand the loop a persistence callback instead of persisting after the fact. `onTail` fires at each turn boundary with exactly the messages the loop just appended — the same ones accumulating in `newTail` — so a crashed session is restorable to its last completed turn, and a caller that passes no callback (evals, tests) persists `result.newTail` itself at the end. Either way the rule is the one the `AgentResult` doc comment states: persist what the loop *reports*, never a reconstruction — reconstruction "silently breaks the moment a context transform reshapes the buffer mid-run."
 
 One sentence on a sibling detail visible in the loop but not the skeleton: before a turn's tail enters the buffer, each turn's token usage is tucked into the assistant message's `providerOptions` (`attachUsageToAssistant`), so a resumed conversation can rebuild its token gauge from the persisted record alone. The buffer isn't just conversation state; it's the run's accounting ledger.
 
@@ -279,7 +281,7 @@ The branch encodes attribution: whose bug is this? The model's malformed argumen
 ```ts title="packages/sdk-core/src/usecases/agentLoop.ts"
 if (outcome._tag === 'malformed') {
   consecutiveMalformed++
-  if (consecutiveMalformed > MAX_MALFORMED) return yield* Effect.fail(outcome.err)
+  if (consecutiveMalformed >= MAX_MALFORMED) return yield* Effect.fail(outcome.err)
 
   const corrective: AgentMessage = {
     role: 'user',
@@ -305,7 +307,7 @@ The honest ledger, because "just write the while loop yourself" glosses over wha
 
 **The invariants are yours now.** Pairing validity isn't enforced by anything except your own care — every path that touches the buffer (correctives, the malformed-arguments wrapper, the boundary-only veto) had to be designed so an assistant tool-call is never left unanswered, and a future refactor can silently break what a provider will only report as a 400 at runtime. Ordering invariants too: oversized tool results are compressed at the moment they enter the buffer — before persistence, before the next prompt — so the persisted record and every future prompt prefix carry the clipped form from byte one and provider-side prompt caches never see a rewrite (the clip mechanics are a post of its own). Get that ordering wrong in either direction and you persist bloat or invalidate every cached prefix; nothing in the type system holds the line for you.
 
-**`maxSteps` is a blunt instrument.** It counts laps, not progress. A methodical 25-step refactor and a model spinning in circles look identical to it, correctives spend from the same allowance, and the only mitigation is layering smarter signals — token budgets, the driver's veto — on top while the cap stays as the dumb, reliable backstop. I'd rather have a crude bound that always fires than a clever one I have to trust, but it's a real cost: sometimes the cap cuts off legitimate work, which is exactly why the partial-result marking exists.
+**`maxSteps` is a blunt instrument.** It counts laps, not progress. A methodical 25-step refactor and a model spinning in circles look identical to it, correctives spend from the same allowance, and the only mitigation is layering smarter signals — token budgets, the driver's veto, the no-progress breaker — on top while the cap stays as the dumb, reliable backstop. I'd rather have a crude bound that always fires than a clever one I have to trust, but it's a real cost: sometimes the cap cuts off legitimate work, which is exactly why the partial-result marking exists.
 
 **Per-step concurrency is a constant, not a solution.** Four tool handlers in parallel is a guess that balances fan-out against provider rate limits, and nested fan-out multiplies it — each concurrent `run_agent` call is a sub-agent making its own model calls. The number is caller-overridable, which is another way of saying the hard problem is deferred to whoever can see the whole system.
 
@@ -315,8 +317,8 @@ Against all that: the alternative is a framework's loop, where these same invari
 
 ## The loop is the easy part — that's the point
 
-There's a whole product category built on the premise that the agent loop is hard: graph DSLs, orchestration frameworks, platforms whose pitch is *we'll run the loop for you*. After writing one, I think the premise is backwards. The loop was an afternoon. It's 250 lines, most of which are comments explaining decisions, and the decisions are the product: where exits live, what the hooks expose, what gets persisted, what the model reads when it fumbles.
+There's a whole product category built on the premise that the agent loop is hard: graph DSLs, orchestration frameworks, platforms whose pitch is *we'll run the loop for you*. After writing one, I think the premise is backwards. The loop was an afternoon. It's ~600 lines today, half of which are comments explaining decisions, and the decisions are the product: where exits live, what the hooks expose, what gets persisted, what the model reads when it fumbles.
 
 Every feature [efferent](https://github.com/xandreeddev/efferent) grew in its first weeks — token budgets, partial-result marking, eval bounding, an execution-tree UI, sub-agent fan-out — landed on the loop's edges, through the hook vocabulary, without touching the file. That's not because the loop is cleverly extensible. It's because the loop is *small enough to have edges*. A framework's loop has surface area instead: configuration, escape hatches, version notes about which callback fires when.
 
-So my advice runs opposite the category: buy the step, own the loop. Let a library do the genuinely fiddly per-step work — schema decoding, handler dispatch, bounded concurrency — and write the while loop yourself, with the exits your product needs and the manners your model deserves. If reading one 250-line file makes the "agentic" part of your system boring, that's not a loss of magic. That's what understanding your own system feels like.
+So my advice runs opposite the category: buy the step, own the loop. Let a library do the genuinely fiddly per-step work — schema decoding, handler dispatch, bounded concurrency — and write the while loop yourself, with the exits your product needs and the manners your model deserves. If reading one 600-line file makes the "agentic" part of your system boring, that's not a loss of magic. That's what understanding your own system feels like.

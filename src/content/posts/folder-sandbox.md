@@ -1,7 +1,7 @@
 ---
 title: 'The whole permission model is one folder'
 description: 'A coding-agent sandbox with one primitive: read anywhere, write inside the folder — enforced in code, not in the prompt.'
-pubDate: 2026-07-06
+pubDate: 2026-08-04
 tags: [agents, effect, ux]
 series:
   name: 'Building a coding agent'
@@ -60,12 +60,12 @@ export interface ScopeBinding {
   readonly displayRoot: string
   /** Reject `write_file`/`edit_file` outside `rootDir`. False for the root. */
   readonly enforceWrite: boolean // [!code highlight]
-  /** Allow the `bash` tool at all. */
+  /** Allow the `bash` tool. */
   readonly allowBash: boolean
 }
 ```
 
-Four fields, and that's the whole permission model. `rootDir` is the line. `displayRoot` is the workspace root — the anchor relative paths resolve against and the base every tool result renders paths relative to, so the model always reads and writes workspace-relative paths no matter which scope it's in. `enforceWrite` arms the check. `allowBash` is the shell's master switch, which we'll get to.
+Four fields, and that's the whole permission model. `rootDir` is the line. `displayRoot` is the workspace root — the anchor relative paths resolve against and the base every tool result renders paths relative to, so the model always reads and writes workspace-relative paths no matter which scope it's in. `enforceWrite` arms the check. `allowBash` is the shell's master switch, which we'll get to. (The struct in the repo carries one more optional field, `fetchBudget` — a cap on a spawned researcher's web lookups. That's a spend brake, not a permission, so it's elided here.)
 
 Notice what the doc comment says about the root: `enforceWrite` is `false` for the top-level agent, whose `rootDir` *is* the workspace. That's not a hole — it's the grant. Launching the agent in a directory is the human saying "this project"; the folder you `cd`'d into is the permission ceremony. Everything below the root — every sub-agent — runs with the check armed.
 
@@ -163,7 +163,7 @@ Bash: ({ command, timeout }) =>
     const r = yield* shell.exec({
       command,
       cwd: rootDir, // [!code highlight]
-      timeoutMs: timeout ?? 60_000,
+      timeoutMs: timeout ?? DEFAULT_BASH_TIMEOUT_MS, // 5 min
     })
     // …
   }),
@@ -198,13 +198,13 @@ const binding: ScopeBinding = {
 }
 // …same tools, rebound to this folder for this run
 const childLayer = genericToolkit.toLayer(
-  buildGenericHandlers(binding, opts, hooks, locks),
+  buildGenericHandlers(binding, opts, hooks, bus),
 )
 ```
 
 Same toolkit at every depth, same handlers, same prompts modulo the scope header — the only thing that varies between the root agent and a grandchild three folders deep is four fields of data. This is the payoff of enforcing at the handler seam instead of inside the adapter or the process: a sandbox that's per-call data costs nothing to apply per spawn. No container boots, no filesystem overlays — a child's entire confinement is constructed in the time it takes to build an object literal.
 
-The composition consequence is the good kind of boring: a parent that fans three sub-agents out into three *disjoint* folders gets non-colliding writes **by construction** — their write sets can't intersect, because each set is bounded by a folder the others can't touch (same-folder spawns serialize on a per-folder lock; the full spawn semantics — seeding, budgets, the persisted context tree — are a post of its own). And if a folder carries a `SCOPE.md`, its body rides along as ambient context for whoever runs there — discovery details likewise a post of its own.
+The composition consequence is the good kind of boring: a parent that fans three sub-agents out into three *disjoint* folders gets non-colliding writes **by construction** — their write sets can't intersect, because each set is bounded by a folder the others can't touch (same-folder writers aren't locked — the orchestrator sequences them, one at a time, waiting between spawns; the full spawn semantics — seeding, budgets, the persisted context tree — are a post of its own). And if a folder carries a `SCOPE.md`, its body rides along as ambient context for whoever runs there — discovery details likewise a post of its own.
 
 One inheritance detail that's easy to miss: `displayRoot` stays the workspace root all the way down. Every agent in the tree resolves and reports paths against the same anchor, so when a child's `OutOfScope` message says `packages/sdk-core/src/ports/FileSystem.ts`, the parent reading that summary knows exactly which file is meant — no per-scope coordinate systems to translate between.
 

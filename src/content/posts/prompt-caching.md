@@ -1,7 +1,7 @@
 ---
 title: 'Prompt caching is a design property, not a billing detail'
 description: 'An agent re-sends 95% of its prompt every turn. Whether you pay full price again is designed, not billed.'
-pubDate: 2026-06-26
+pubDate: 2026-07-28
 tags: [ai, agents]
 draft: true
 ---
@@ -208,7 +208,7 @@ None of these clauses live in the caching code. They live in the store, the loop
 
 A property this silent needs instrumentation, because both failure modes — never caching, and quietly breaking the prefix — produce zero errors. [efferent](https://github.com/xandreeddev/efferent)'s TUI keeps the answer permanently on screen: the status bar reads `model · gauge 12% 18k/1M · 86% cached · …`, where the cache figure is the share of the last turn's input served from the provider's cache. The computation is one line:
 
-```ts title="packages/code/src/cli/presentation/statusBar.ts"
+```ts title="packages/cli/src/cli/presentation/statusBar.ts"
 /**
  * The share of the last turn's context served from the provider's
  * cache (`42` = 42%) — the caching story in one number.
@@ -252,7 +252,7 @@ Honest ledger, because none of this is free.
 
 **Caching constrains what you're allowed to want.** This is the deep cost. A frozen prefix means no timestamp in the system prompt, no per-request mode flags up top, no mid-session tool swaps, no "small cleanup" of old history — designs that are perfectly reasonable in a stateless API become cache poison in an agent. You end up routing every dynamic impulse to the tail of the prompt, which is sometimes awkward and always deliberate. The cache doesn't just discount your architecture; it disciplines it.
 
-**Cross-provider means per-provider shaping, forever.** One provider needs markers stamped, one needs a routing key pinned, one needs nothing sent but its usage read from a different field — and one reports input tokens in a way that breaks your gauge unless you correct it. A multi-provider agent can't have a single caching story; it has a router that knows three. And the caches are per-model: the `/model` switch mid-session is a full cold rebuild, priced accordingly.
+**Cross-provider means per-provider shaping, forever.** One provider needs markers stamped, one needs a routing key pinned, one needs nothing sent but its usage read from a different field — and one reports input tokens in a way that breaks your gauge unless you correct it. A multi-provider agent can't have a single caching story; it has a router that knows three. And the caches are per-model: the `:model` switch mid-session is a full cold rebuild, priced accordingly.
 
 ## The bill is a code review
 

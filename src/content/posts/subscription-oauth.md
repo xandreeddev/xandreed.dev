@@ -1,7 +1,7 @@
 ---
 title: 'Subscription OAuth is the hard half of multi-provider auth'
 description: 'API keys are the easy case. Subscription OAuth — PKCE, refresh races, header shaping — behind the same port.'
-pubDate: 2026-06-24
+pubDate: 2026-07-24
 tags: [effect, agents, typescript]
 series:
   name: 'Building a coding agent'
@@ -46,7 +46,7 @@ The highlighted field is where the engineering lives. `expires` turns a credenti
 A *port*, in the hexagonal sense, is an interface the core owns and adapters implement — the core describes what it needs, never how it's done. [efferent](https://github.com/xandreeddev/efferent)'s credential port is an Effect `Context.Tag` (a typed service identifier; the full Effect tour is a post of its own), and its surface is small:
 
 ```ts title="packages/sdk-core/src/ports/AuthStore.ts"
-export class AuthStore extends Context.Tag('@efferent/core/AuthStore')<
+export class AuthStore extends Context.Tag('@xandreed/sdk-core/AuthStore')<
   AuthStore,
   {
     /** The full credential map — drives the `:login` provider-status tags. */
@@ -62,6 +62,7 @@ export class AuthStore extends Context.Tag('@efferent/core/AuthStore')<
     ) => Effect.Effect<Redacted.Redacted | undefined, AuthError> // [!code highlight]
     readonly setApiKey: (p: Provider, key: string) => Effect.Effect<void, AuthError>
     readonly setOAuth: (p: Provider, tokens: OAuthTokens) => Effect.Effect<void, AuthError>
+    readonly setLocal: (p: Provider, baseUrl?: string) => Effect.Effect<void, AuthError>
     readonly remove: (p: Provider) => Effect.Effect<void, AuthError>
   }
 >() {}
@@ -73,7 +74,7 @@ The point of the design is what the *caller* can't do: it cannot tell a forever-
 
 ## auth.json: one file, written carefully
 
-Credentials live in exactly one place: `~/.efferent/auth.json`, a per-provider map written by the in-app `:login` flow.
+Credentials live in `~/.efferent/auth.json`, a per-provider map written by the in-app `:login` flow — plus, optionally, a per-project `<cwd>/.efferent/auth.json` that overrides it provider-by-provider (same shape, merged at startup).
 
 ```json
 {
@@ -146,7 +147,7 @@ The protocol constants — client id, endpoints, scopes — match the public Cla
 
 Now the driver. `begin` hands back the authorize URL plus the callback coordinates; the driver starts a loopback HTTP server bound to `127.0.0.1`, opens the browser, and forks a waiter:
 
-```ts title="packages/code/src/cli/actions/login.ts"
+```ts title="packages/cli/src/cli/actions/login.ts"
 const begun = yield* authFlow.begin(provider) // fresh PKCE + the authorize URL
 const server = startCallbackServer(begun.callbackPort, begun.callbackPath)
 yield* shell.exec({ command: browserCommand(begun.authorizeUrl), cwd, timeoutMs: 5_000 })

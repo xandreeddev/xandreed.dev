@@ -87,7 +87,7 @@ Read that JSON the way the model does. It answers, in order: *what does this do 
 
 ## Anatomy of a description that routes
 
-A tool description has two jobs, and most people only write the first: say what the tool does. The second job is **routing** — saying when to use it *and when to use its sibling instead* — because the model's real decision is rarely "can this tool do X" but "which of these twelve tools is right for X." [efferent](https://github.com/xandreeddev/efferent)'s file-writing pair makes the routing explicit, in the description itself:
+A tool description has two jobs, and most people only write the first: say what the tool does. The second job is **routing** — saying when to use it *and when to use its sibling instead* — because the model's real decision is rarely "can this tool do X" but "which of these two dozen tools is right for X." [efferent](https://github.com/xandreeddev/efferent)'s file-writing pair makes the routing explicit, in the description itself:
 
 ```ts title="packages/sdk-core/src/usecases/codingToolkit.ts"
 export const WriteFile = Tool.make('write_file', {
@@ -167,15 +167,19 @@ const RunAgentTool = Tool.make('run_agent', {
   description:
     'Spawn a sub-agent to do focused work scoped to a folder. It reads anywhere but ' +
     'writes/runs bash only inside that folder, runs in its own persisted context, and ' +
-    'returns { summary, filesChanged, nodeId }. Prefer it when a change is localized to one ' +
+    'works in the BACKGROUND: this call returns { nodeId, name, status: "running" } ' +
+    'IMMEDIATELY — it does NOT wait for the agent to finish, so you never block and can ' +
+    "spawn several at once (they run in parallel). To get a spawned agent's result, call " +
+    "wait_for_agents (or you'll receive its completion in your inbox at a turn boundary). " +
+    'Prefer it when a change is localized to one ' +
     "area; it keeps your own context focused. Be explicit in 'task' — the sub-agent starts " +
     'fresh unless you resume/branch a node. DEFAULT TO A FRESH SPAWN: one agent = one piece ' + // [!code highlight]
     'of work; a new task gets a new agent even in the same folder (fresh context is cheaper ' +
     'and more focused — a resume re-feeds the node\'s entire history every turn). Reuse a node ' +
     "only when the new task is a direct follow-up on that node's OWN work: seedMode 'resume' " +
     "to continue/fix/extend what it just did (its accumulated file knowledge pays for itself), " +
-    "'branch' to retry or take an alternative direction from its context without growing it.",
-  // … parameters: name, folder, task, seedFromNode, seedMode
+    "'branch' to retry or take an alternative direction from its context without growing it. …",
+  // … parameters: name, folder, task, seedFromNode, seedMode, agent, instructions, tools, role
 })
 ```
 
@@ -183,7 +187,7 @@ This is a policy document wearing a description's clothes, and every sentence is
 
 **"Spawn a sub-agent to do focused work scoped to a folder."** — what it does, first, in one sentence, because selection happens on the opening words and everything after is for the model that's already interested.
 
-**"…returns { summary, filesChanged, nodeId }."** — the return shape, *in the description*, even though the success schema already declares it. Redundant to a type checker; not redundant to a planner. A model deciding whether to delegate needs to know what it gets back *before* it calls, because "will I be able to verify this work?" is part of the decision.
+**"…returns { nodeId, name, status: \"running\" } IMMEDIATELY."** — the return shape, *in the description*, even though the success schema already declares it. Redundant to a type checker; not redundant to a planner. A model deciding whether to delegate needs to know what it gets back *before* it calls — and here the shape teaches the whole workflow: the spawn returns instantly, results arrive through `wait_for_agents`, so fanning out several agents in one turn is safe. That's a delegation strategy, learned from a return type.
 
 **"Be explicit in 'task' — the sub-agent starts fresh unless you resume/branch a node."** — preempting the single most common delegation failure: a parent writing `task: 'fix the bug we discussed'` to a child that has no idea what was discussed. The mental model ("starts fresh") is the cure, so the description teaches the mental model, not just the rule.
 
@@ -243,15 +247,15 @@ When do you accommodate a habit, and when do you correct it? The toolkit embodie
 
 ## The annotation budget
 
-All this generosity has a meter running. Tool definitions ship with **every request** — the toolkit's serialized JSON rides alongside the system prompt on every single turn, of every conversation, whether or not any tool gets called. Twelve tools' worth of descriptions, annotations, and schema structure is a standing tax measured in thousands of tokens. (Prompt caching makes the re-reads cheap on providers that support it — [efferent](https://github.com/xandreeddev/efferent) pins tools and system prompt into the cached prefix, a post of its own — but cached tokens still occupy context, and context is the scarcer currency.)
+All this generosity has a meter running. Tool definitions ship with **every request** — the toolkit's serialized JSON rides alongside the system prompt on every single turn, of every conversation, whether or not any tool gets called. Two dozen tools' worth of descriptions, annotations, and schema structure is a standing tax measured in thousands of tokens. (Prompt caching makes the re-reads cheap on providers that support it — [efferent](https://github.com/xandreeddev/efferent) pins tools and system prompt into the cached prefix, a post of its own — but cached tokens still occupy context, and context is the scarcer currency.)
 
 So the toolkit spends like someone who knows it's a budget. The spread is deliberate:
 
 - **Terse where training carries the load.** `ls` gets eleven words: "List a directory's entries. Use recursive: true to descend." Every model on earth knows `ls`. Annotating it heavily would buy nothing.
 - **Medium where there's one convention to pin.** `read_file` is two sentences plus three short annotations — the 1-indexing and path conventions are the only ambiguities worth money.
-- **Verbose where a wrong call is expensive and the decision is genuinely hard.** `run_agent`'s description runs ~150 words — by far the longest — because each call spins up an entire sub-agent loop with its own model spend, and the fresh-vs-resume decision has no training-data default to lean on. A wasted spawn costs five orders of magnitude more than its description does.
+- **Verbose where a wrong call is expensive and the decision is genuinely hard.** `run_agent`'s description runs ~250 words — by far the longest — because each call spins up an entire sub-agent loop with its own model spend, and the fresh-vs-resume decision has no training-data default to lean on. A wasted spawn costs five orders of magnitude more than its description does.
 
-The budget heuristic that falls out: **description length should be proportional to the cost of misuse times the ambiguity of the choice,** not to how proud you are of the feature. And some guidance doesn't belong in the schema at all — [efferent](https://github.com/xandreeddev/efferent)'s system prompt carries the cross-tool workflow ("Prefer 'grep' for searching content and 'glob' for finding files by name. Reach for 'Bash' only when the other tools can't do the job"), because routing *between* tools is global behavior, while each description owns the contract of one call. Two surfaces, two altitudes, one budget.
+The budget heuristic that falls out: **description length should be proportional to the cost of misuse times the ambiguity of the choice,** not to how proud you are of the feature. And some guidance doesn't belong in the schema at all — [efferent](https://github.com/xandreeddev/efferent)'s system prompt carries a `# Tools` block with one curated routing line per tool ("write_file({ path, content }) — create or fully replace a file. Prefer edit_file for changes to existing files."), rendered from the same source as the toolkit itself, so the prompt can never advertise a tool the agent doesn't actually hold — because routing *between* tools is global behavior, while each description owns the contract of one call. Two surfaces, two altitudes, one budget.
 
 ## What this costs
 

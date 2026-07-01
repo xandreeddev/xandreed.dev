@@ -1,7 +1,7 @@
 ---
 title: 'Error messages are prompt engineering now'
 description: "An agent's failure strings are read by the model that caused them — each should name what happened and the next move."
-pubDate: 2026-07-08
+pubDate: 2026-08-07
 tags: [agents, ai, ux]
 series:
   name: 'Building a coding agent'
@@ -94,7 +94,7 @@ const MAX_MALFORMED = 3
 // in the loop, when the response itself failed to decode:
 if (outcome._tag === 'malformed') {
   consecutiveMalformed++
-  if (consecutiveMalformed > MAX_MALFORMED) return yield* Effect.fail(outcome.err)
+  if (consecutiveMalformed >= MAX_MALFORMED) return yield* Effect.fail(outcome.err)
   const corrective: AgentMessage = {
     role: 'user',
     content:
@@ -110,7 +110,7 @@ if (outcome._tag === 'malformed') {
 consecutiveMalformed = 0
 ```
 
-The load-bearing clause is the roster. A hallucinated tool name isn't random noise — it's a high-prior guess from training, and the only thing that beats a prior is fresh evidence, so the list of *real* names goes directly into the message where it outranks memory. Two more clauses are deliberate. *"or plain text if you're done"* gives a model that was genuinely finishing an exit — a pure "use a tool!" corrective would pressure it into one more pointless call. And the whole path is bounded: three correctives without a successful parse and the loop fails for real. More on that bound in the rules.
+The load-bearing clause is the roster. A hallucinated tool name isn't random noise — it's a high-prior guess from training, and the only thing that beats a prior is fresh evidence, so the list of *real* names goes directly into the message where it outranks memory. Two more clauses are deliberate. *"or plain text if you're done"* gives a model that was genuinely finishing an exit — a pure "use a tool!" corrective would pressure it into one more pointless call. And the whole path is bounded: two correctives, and a third consecutive unparseable reply fails the loop for real. More on that bound in the rules.
 
 ### The denial
 
@@ -145,7 +145,7 @@ This is the gallery's only string co-authored at runtime by a human. The reason 
 export const budgetExhaustedFailure = {
   error: 'BudgetExhausted',
   message:
-    'the sub-agent token budget for this turn is exhausted — do the remaining work yourself instead of spawning.', // [!code highlight]
+    'the sub-agent token budget for this turn is exhausted — stop spawning. Synthesize and return the best result you can from the work already completed, and note in your summary any remaining work so the caller can pick it up in a fresh turn (do NOT switch to doing that remaining work inline here).', // [!code highlight]
 } as const
 
 /** Appended to a sub-agent's summary when the pool stopped it early. */
@@ -153,7 +153,7 @@ export const BUDGET_STOP_NOTE =
   '[stopped early: the shared sub-agent token budget ran out — this result is partial]'
 ```
 
-The first refuses the *next* spawn — and notice it names the replacement strategy, not just the limit. The model's plan was delegation; *"do the remaining work yourself instead of spawning"* converts "your plan is blocked" into "here is your new plan" within one clause. There is also nothing to vary and retry — the budget doesn't depend on the arguments — so the string preempts the retry rather than letting the model discover futility empirically. (Its cousin for the depth cap reads the same way: *"sub-agent nesting limit (2) reached — do this part yourself."*)
+The first refuses the *next* spawn — and notice it names the replacement strategy, not just the limit. The model's plan was delegation; the string converts "your plan is blocked" into "here is your new plan": wrap up, report honestly, hand the remainder back to whoever called you. There is also nothing to vary and retry — the budget doesn't depend on the arguments — so the string preempts the retry rather than letting the model discover futility empirically. And this string is the gallery's best evidence that failure strings are *obeyed*, because its first draft was obeyed too well. It used to say *"do the remaining work yourself instead of spawning"* — and when the pool drained mid-fleet, the coordinator did exactly that: absorbed the entire remaining implementation into itself, un-delegated, exactly the behavior the whole fleet design exists to prevent. The model didn't misread the instruction; the instruction was wrong. The rewrite names the strategy that keeps the work where it belongs — and its doc comment now records why, so nobody "simplifies" it back. (Its cousin for the depth cap keeps the old shape, because there it *is* the right advice: *"sub-agent nesting limit (2) reached — do this part yourself."*)
 
 The second string handles the harder case: a sub-agent that was already running when the pool hit zero stops at its next turn boundary — and its final text, at that moment, is mid-thought. The danger isn't the missing work; it's that the parent can't tell. A sub-agent's one-line summary is what the `run_agent` tool *returns*, and an unmarked partial summary reads exactly like a deliverable:
 
@@ -233,7 +233,7 @@ These strings were written weeks apart for unrelated subsystems, but laid side b
 
 **Make refusals data, not dead ends.** The denial, the budget, the write sandbox — all are policies the model is *supposed* to hit sometimes. A policy hit that aborts the turn punishes the human for the agent's reach; a policy hit returned as `{ error, message }` keeps the turn alive and makes the boundary part of the model's knowledge. The sandbox refusal even scripts the workaround — defer it to the parent — because hitting the boundary is a normal step in delegated work, not misbehavior.
 
-**Bound the retries.** A corrective is a wager that the model can do better with more information. `MAX_MALFORMED = 3` is the loop admitting the wager can lose: three consecutive correctives without a single parseable response and the turn fails for real, instead of burning tokens politely forever. The counter resets on any successful decode — the bound is on *consecutive* confusion, not total mistakes. Instructive failures without a bound are an invitation to the politest possible infinite loop, billed per lap.
+**Bound the retries.** A corrective is a wager that the model can do better with more information. `MAX_MALFORMED = 3` is the loop admitting the wager can lose: the third consecutive unparseable response fails the turn for real, instead of burning tokens politely forever. The counter resets on any successful decode — the bound is on *consecutive* confusion, not total mistakes. Instructive failures without a bound are an invitation to the politest possible infinite loop, billed per lap.
 
 **When work is partial, say so where the parent will read it.** `BUDGET_STOP_NOTE` is appended to the sub-agent's *summary* because the summary is the only artifact the parent model ever sees. A warning emitted to a log no model reads is a warning to nobody; the placement is as much a part of the design as the wording. Write the caveat into the value that gets consumed, or it doesn't exist.
 
@@ -247,7 +247,7 @@ Three honest costs.
 
 **Instructive failures are prompt tokens.** The message buffer is append-only, so every corrective persists for the rest of the conversation and rides along (cached, but still context) with every subsequent call. The `InvalidToolCall` message can carry up to 800 characters of decode description; a staleness brief can carry 25 lines of diff stat. Each is cheap against the turn it saves — but they compound, and an agent that fails often becomes an agent hauling a transcript full of advice about its past mistakes.
 
-**Strings drift from behavior unless tested.** *"re-run the tool narrower — read_file with offset/limit"* is true exactly as long as `read_file` has `offset` and `limit`. Rename a tool, drop a parameter, and the string lies — and nothing will tell you, because prose doesn't typecheck. Of everything quoted in this post, only the handoff brief's behavior is currently guarded by an eval (a scorer asserts it's a summary, not a chat reply); the rest are tested the way comments are: by hoping. The honest fix is evals that induce each failure and assert on the transcript that follows — cheap to write, just not yet written.
+**Strings drift from behavior unless tested.** *"re-run the tool narrower — read_file with offset/limit"* is true exactly as long as `read_file` has `offset` and `limit`. Rename a tool, drop a parameter, and the string lies — and nothing will tell you, because prose doesn't typecheck. Of everything quoted in this post, only the compaction marker sits near an eval today (a `compaction-digest` suite scores the fidelity of the fast-tier digest that rides inside it); the strings themselves — the recipes, the correctives, the recovery protocols — are tested the way comments are: by hoping. The honest fix is evals that induce each failure and assert on the transcript that follows — cheap to write, just not yet written.
 
 **Too-helpful errors teach leaning on recovery.** If every malformed call earns a patient corrective, sloppy calls are cheap — and not just across training runs; *in context*, a transcript full of graceful recoveries teaches this model, right now, that schema discipline is optional. There's also accommodation creep: [efferent](https://github.com/xandreeddev/efferent)'s `edit_file` eventually stopped correcting one wrong shape and started *accepting* it — models trained on another harness's edit tool kept emitting a flat `oldText`/`newText` instead of the documented `edits` array, so the decoder now takes both. Probably the right call. But every such acceptance deletes the failure signal that told you what models actually get wrong, and you can only read the signals you still emit.
 

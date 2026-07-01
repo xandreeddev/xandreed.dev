@@ -77,7 +77,7 @@ None of this was a runtime change. The reclaim added no decode calls, minted no 
 
 Not every brand needs a runtime decoder, and Effect gives you both kinds. The choice is about *where the value comes from*.
 
-**`Schema.brand`** — for anything that decodes at a boundary: a DB row, model or user input, tool I/O. You want the validation, because the value is arriving from outside the type system's jurisdiction. efferent's two ids are this kind — `ContextNodeId` and `ConversationId`, both `Schema.UUID` refined to a brand.
+**`Schema.brand`** — for anything that decodes at a boundary: a DB row, model or user input, tool I/O. You want the validation, because the value is arriving from outside the type system's jurisdiction. efferent's ids are this kind — `ContextNodeId` and `ConversationId`, both `Schema.UUID` refined to a brand.
 
 **`Brand.nominal`** — for a value that's born inside the core, never crosses a decode boundary, and only needs confusability protection. It's a pure type-level tag with *zero* runtime cost — no validation, no wrapper:
 
@@ -121,7 +121,7 @@ The difference between this and the bug from three sections ago is *one word in 
 
 Honesty section. Brands are not free, and the cost is **unwrap noise**. The moment a `TokenCount` has to be added to another `TokenCount`, or compared, or summed into a ledger, you're either threading unwrap helpers through the arithmetic or you've made `+` stop type-checking. That's why efferent's plan quarantines the count and secret brands into their own phase, behind their own branch — viral, behavioral brands have to be revertible in isolation, because the only way to know if the unwrap tax beats the safety is to live with it for a week.
 
-Two more honest edges. There are **casts that survive** — a couple of `as ConversationId` in the synchronous TUI key handlers, kept because pushing an Effectful decode into a keypress handler to guard an impossible failure is a worse trade than the cast; left in with the rationale in a comment, to be revisited only if those handlers ever go effectful. And the adoption itself is a **flag day per family**: turning a primitive into a brand surfaces every mismatched call site at once as a compile error. That's the feature — but it means you brand one family per branch, lean on `tsc` to enumerate the fallout, and don't bulk-adopt the whole zoo in one heroic diff. No DB migration, ever — brands erase on encode, so the JSON and the rows don't move; the cost is paid entirely in compile errors, which is the cheapest currency you have.
+Two more honest edges. There are **casts that survive** — the odd `as ConversationId` in the TUI's synchronous key handling, kept because pushing an Effectful decode into a keypress handler to guard an impossible failure is a worse trade than the cast, to be revisited only if those handlers ever go effectful. And the adoption itself is a **flag day per family**: turning a primitive into a brand surfaces every mismatched call site at once as a compile error. That's the feature — but it means you brand one family per branch, lean on `tsc` to enumerate the fallout, and don't bulk-adopt the whole zoo in one heroic diff. No DB migration, ever — brands erase on encode, so the JSON and the rows don't move; the cost is paid entirely in compile errors, which is the cheapest currency you have.
 
 ## A type is a promise
 

@@ -53,7 +53,7 @@ export interface ModelSelection {
 [efferent](https://github.com/xandreeddev/efferent)'s core declares a `ModelRegistry` service around it:
 
 ```ts title="packages/sdk-core/src/ports/ModelRegistry.ts"
-export class ModelRegistry extends Context.Tag('@efferent/core/ModelRegistry')<
+export class ModelRegistry extends Context.Tag('@xandreed/sdk-core/ModelRegistry')<
   ModelRegistry,
   {
     /** The model the loop should use right now. */
@@ -123,7 +123,7 @@ Three things to read out of that, in order.
 
 **The layer body runs once.** It captures four dependencies — registry, credentials, settings, an HTTP client — and none of them is a provider. The expensive, shared thing (the platform HTTP client) lives at layer scope; everything cheap and decision-shaped happens later.
 
-**Every method starts with `registry.current`.** The highlighted line is the whole thesis in code: the selection is consulted at the last possible moment, inside the call, so there is no window in which a stale choice can be in flight. `:model` writes settings; the next `generateText` reads them. Done.
+**Every method starts with `registry.current`.** The highlighted line is the whole thesis in code: the selection is consulted at the last possible moment, inside the call, so there is no window in which a stale choice can be in flight. `:model` writes settings; the next message reads them. Done. (One refinement has landed since: a multi-turn run pins its selections at the first turn — `RunContext.pinnedModels` — so a mid-run switch can't yank the model out from under a fleet of sub-agents already in flight; the new choice applies from the next run. The resolution is still per-call — the pin is just the first thing it reads.)
 
 **The `scoped` suffixes are doing real work.** A `Scope` is Effect's reified resource lifetime — acquire things into it, and when it closes, every finalizer runs, on success, failure, *or interruption* (the full semantics are a post of its own). `Effect.scoped` closes that lifetime when the one call ends; `Stream.unwrapScoped` does the same for a streaming response (a `Stream` is Effect's async sequence — here, the token stream), keeping the scope open exactly as long as the stream and not a tick longer. The provider client built by `resolveAndBuild` lives inside that scope, so it exists for precisely one call. Nothing anywhere holds a client for a provider you switched away from; "request-scoped" isn't a comment, it's the type.
 
@@ -142,7 +142,7 @@ export type Credential =
     }
   | { readonly type: 'local'; readonly baseUrl: string | null } // Ollama: no key at all
 
-export class AuthStore extends Context.Tag('@efferent/core/AuthStore')<
+export class AuthStore extends Context.Tag('@xandreed/sdk-core/AuthStore')<
   AuthStore,
   {
     readonly get: (p: Provider) => Effect.Effect<Credential | null>
@@ -316,7 +316,7 @@ const complete = (prompt: string, options?: { role?: 'fast' }) =>
 
 Settings read at call time, role resolved through the one fallback chain, credential resolved with the same refresh semantics, provider built into a one-call scope. Which means the helper tiers inherit the liveness contract for free: `:model fast` (the same live picker, scoped to a role) or a `:login` takes effect on the next helper call, no rebuild, exactly like the chat path. If provider choice had stayed a layer, each role would have needed its own slice of the layer graph and its own restart story. As state, a role is one string read.
 
-Roles also turn out to be the durable axis for *accounting*. Because every completion reports its usage, the TUI accumulates billed tokens per role — the root conversation and reasoning sub-agents land on `general`, code-writing sub-agents on `code`, helper calls on `fast` — and renders a running ledger in the activity pane: `Σ general 64k · code 12k · fast 1.2k`. That line is the fast-tier argument made empirical: thousands of helper tokens that cost effectively nothing because they went to a model priced for it. And it's stable vocabulary in a way model names can never be — you can swap every provider tomorrow and `fast` still means "the one that keeps turns snappy," in the settings keys, in the picker, and in the ledger.
+Roles also turn out to be the durable axis for *accounting*. Because every completion reports its usage, the TUI accumulates billed tokens per role into the session's running ledger — the root conversation and reasoning sub-agents land on `general`, code-writing sub-agents on `code`, helper calls on `fast`. That ledger is the fast-tier argument made empirical: thousands of helper tokens that cost effectively nothing because they went to a model priced for it. And it's stable vocabulary in a way model names can never be — you can swap every provider tomorrow and `fast` still means "the one that keeps turns snappy," in the settings keys, in the picker, and in the ledger.
 
 One small asymmetry worth noticing: the router stamps Anthropic cache breakpoints only on the agentic (`general`/`code`) chat path. Helper calls are one-shot prompts that will never be reused, and Anthropic charges a premium to *write* cache entries — so the `fast` tier deliberately skips the stamping. A per-call seam makes even that distinction one `if` instead of a configuration system.
 
@@ -332,7 +332,7 @@ The honest ledger, because this design isn't free.
 
 **Per-call construction is cheap, not free — and it's a commitment.** Building a provider service per call costs almost nothing here because the heavy thing (the HTTP client) is shared and the wrapper is configuration. But the design forbids any client-level state surviving between calls; a provider SDK that wanted a warm session handle would fight this architecture, and the architecture would have to win.
 
-**Switching mid-conversation is cheap, not lossless.** The router makes the *switch* instant; it cannot make the new provider accept history it didn't write. Gemini rejects prior non-Gemini tool calls that lack its `thought_signature` — a hard 400 — so [efferent](https://github.com/xandreeddev/efferent) surfaces a one-line hint when you switch providers mid-conversation, and the honest escape hatch is `/reset`. The opaque-state slot preserves each provider's luggage; it can't conjure luggage that never existed.
+**Switching mid-conversation is cheap, not lossless.** The router makes the *switch* instant; it cannot make the new provider accept history it didn't write. Gemini rejects prior non-Gemini tool calls that lack its `thought_signature` — a hard 400 — so [efferent](https://github.com/xandreeddev/efferent) surfaces a one-line hint when you switch providers mid-conversation, and the honest escape hatch is `:clear`. The opaque-state slot preserves each provider's luggage; it can't conjure luggage that never existed.
 
 **Every call re-reads settings and credentials.** Against local JSON files this is unmeasurable. But it's a real constraint: move those stores onto a network and you'd suddenly want the cache this design's correctness comes from not having.
 

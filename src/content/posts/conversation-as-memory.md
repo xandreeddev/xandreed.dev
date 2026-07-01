@@ -1,7 +1,7 @@
 ---
 title: 'The transcript is the memory'
 description: 'A model call is stateless, so the conversation transcript is the agent''s entire memory. Keep the whole history as an append-only log — and that one invariant is what makes caching, compression, and resume all work.'
-pubDate: 2026-06-18
+pubDate: 2026-07-07
 tags: [agents, ai, effect]
 series:
   name: 'How an agent remembers'
@@ -100,7 +100,7 @@ for (const m of result.newTail) yield* store.append(conversationId, m) // [!code
 
 Load the prior history, prepend it to the new prompt, run the loop, and append exactly what the loop produced. A first run and a thousandth resume are the same code path — the only difference is how many rows `listActive` hands back. Statelessness stops being a problem the instant the history is durable.
 
-Note the last line: the loop returns `result.newTail` — the precise list of messages it appended this turn — and the caller persists *those*, not a slice of the working buffer. That matters because the buffer can be reshaped mid-run (a giant tool result gets compressed in place), so an index-arithmetic "everything after message N" would persist the wrong bytes. The loop tracking its own output is a discipline worth its own post.
+Note the last line: the loop returns `result.newTail` — the precise list of messages it appended this turn — and the caller persists *those*, not a slice of the working buffer. (The interactive driver goes one step further: it hands the loop an `onTail` hook that persists the same list incrementally, turn by turn, so a crash mid-run keeps every completed turn.) That matters because the buffer can be reshaped mid-run (a giant tool result gets compressed in place), so an index-arithmetic "everything after message N" would persist the wrong bytes. The loop tracking its own output is a discipline worth its own post.
 
 ## `list` vs. `listActive`: two read paths, one truth
 

@@ -1,7 +1,7 @@
 ---
 title: 'Your app calls a model in more places than you think'
 description: 'Every LLM call site in a real agent, enumerated: which tier serves it, how it fails, and where its tokens land.'
-pubDate: 2026-06-19
+pubDate: 2026-07-10
 tags: [ai, agents, effect]
 series:
   name: 'Building a coding agent'
@@ -44,7 +44,7 @@ The third currency is the tell. Ask "what happens when this call fails?" for eac
 
 [efferent](https://github.com/xandreeddev/efferent) is a long-running agent, which means it grows helper calls faster than most apps — anything that touches context, approvals, or session chrome is a candidate. The defense is one routing rule, stated in the repo's own words:
 
-> All *agentic* work — anything that drives the tool loop — runs through the router `LanguageModel`, on the **general** tier by default or the **code** tier for sub-agents that write code. Everything else is a **one-shot helper call** and goes through `UtilityLlm.complete(prompt, { role: 'fast' })`. Web search is the deliberate exception (a provider-server-side tool, not a chat completion). No other module may call a provider SDK.
+> All *agentic* work — anything that drives the tool loop — runs through the router `LanguageModel`, on the **general** tier by default or the **code** tier for sub-agents that write code; the spawner picks the tier, never a specific model. Everything else is a **one-shot helper call** and goes through `UtilityLlm.complete(prompt, { role: 'fast' })`. Web search is the deliberate exception (a provider-server-side tool, not a chat completion). No other module may call a provider SDK.
 
 Two doorways and one named exception. Because every call funnels through them, the census is short enough to fit in a table — and here is the complete in-app inventory, every row verified against the code:
 
@@ -53,17 +53,17 @@ Two doorways and one named exception. Because every call funnels through them, t
 | agent loop (root + every sub-agent) | every turn | **general** / **code** | the turn fails — the one site allowed to | context gauge + `byRole.general` / `byRole.code` |
 | approval judge | a command with no matching approval rule | **fast** | degrade: show the human the modal | `byRole.fast` |
 | compaction digests | oversized tool result with a big dropped middle | **fast** | degrade: plain clip marker | `byRole.fast` |
-| handoff brief | `:handoff`, auto-fold, or a handoff-seeded spawn | **general** | error block on the rail; unfolded context stays | uncounted — known gap |
+| handoff brief | `:handoff`, auto-fold, or a handoff-seeded spawn | **general** (the spawning agent's tier) | error block on the rail; unfolded context stays | uncounted — known gap |
 | session title | a session's first exchange | **fast** | nothing — the session stays untitled | `byRole.fast` |
 | web search | the `search_web` tool | its own search model | a tool error the model reads | uncounted — known gap |
 
-(There's a seventh category — eval scoring and eval tasks run LLM calls too — but those run under a separate eval environment and their spend lands in the eval report, out of the app by design.)
+(There's a seventh category — eval scoring and eval tasks run LLM calls too — but those run under a separate eval environment and their spend lands in the eval report, out of the app by design. And the newest arrivals, from the self-improving loop: the swarm gate's verdict — Opus, driven through the external Claude Code CLI rather than any in-app doorway — and a fast-tier distiller that mines finished runs for reusable learnings. New call sites keep appearing; that's the argument for the map.)
 
 Notice what the columns are. Not just *where* and *which model* — also *what happens on failure* and *where the tokens land*. Those two columns are the whole thesis of this post, and the rest of it walks the rows to earn them.
 
 ### The loop is the easy part
 
-One `LanguageModel.generateText` per turn in `agentLoop.ts`, resolved through a router that re-reads the live model selection on every call. Sub-agents — spawned scopes working in parallel folders — run *the same loop*, on the **general** tier by default; the repo's phrasing is that **delegation changes the context, not the brain**. The one refinement: a sub-agent that *writes* code can be pinned to the **code** tier, so the brain is *specialized* — a coding-tuned model behind the edits — never *discounted*. Running real edits on a cheaper model would be a quality decision smuggled in as a cost optimization; the `code` tier exists precisely so that decision is explicit and configurable instead of implicit. The loop's internals are a post of its own; for the census all that matters is: one call site, the agentic tiers, and it's the only row whose failure is allowed to fail the turn — it *is* the turn.
+One `LanguageModel.generateText` per turn in `agentLoop.ts`, resolved through a router that resolves the calling agent's tier to its model on every call — pinned at run start, so a mid-run `:model` can't yank the model out from under a running fleet; the switch lands on the next run. Sub-agents — spawned scopes working in parallel folders — run *the same loop*, on the **general** tier by default; the repo's phrasing is that **delegation changes the context, not the brain**. The one refinement: a sub-agent that *writes* code can be pinned to the **code** tier, so the brain is *specialized* — a coding-tuned model behind the edits — never *discounted*. Running real edits on a cheaper model would be a quality decision smuggled in as a cost optimization; the `code` tier exists precisely so that decision is explicit and configurable instead of implicit. The loop's internals are a post of its own; for the census all that matters is: one call site, the agentic tiers, and it's the only row whose failure is allowed to fail the turn — it *is* the turn.
 
 ### Call site: the approval judge
 
@@ -106,7 +106,7 @@ Trigger: per loop step, only on oversized results. Tier: **fast**, declared at t
 
 ### Call site: the handoff brief
 
-When the context window fills past a threshold (or the user types `:handoff`), the conversation gets folded: an LLM summarizes the loaded view into a brief, a checkpoint is written, and future turns load only the brief plus what came after. Here's the row that proves tiering is a real decision and not a reflex: the summarizer runs on **general** — `generateHandoffBrief` calls `LanguageModel.generateText` directly, the only helper that does. Deliberately so: the brief *is* the continuity. Every fact it drops is gone from the agent's working memory, so this is the last place to save a fraction of a cent. A tier is a judgment about how much a call's quality matters, and this call's answer is "maximally."
+When the context window fills past a threshold (or the user types `:handoff`), the conversation gets folded: an LLM summarizes the loaded view into a brief, a checkpoint is written, and future turns load only the brief plus what came after. Here's the row that proves tiering is a real decision and not a reflex: the summarizer runs on the agentic tier — `generateHandoffBrief` calls `LanguageModel.generateText` directly, the only helper that does, so the router resolves it to the spawning agent's role (**general** at the root). Deliberately so: the brief *is* the continuity. Every fact it drops is gone from the agent's working memory, so this is the last place to save a fraction of a cent. A tier is a judgment about how much a call's quality matters, and this call's answer is "maximally."
 
 Failure policy: a failed fold surfaces as an error block in the UI and the unfolded context stays loaded — annoying, never fatal. Spend: **uncounted**, and the map says so out loud. More on that below.
 
@@ -128,7 +128,7 @@ const res = yield* svc.generateText({
 return { answer: res.text, sources: extractSources(res.content) }
 ```
 
-Trigger: the model decides to search. Tier: its own — a sixth model selection, independent of the chat model, which is exactly the kind of fact that lives nowhere except in an inventory. Failure policy: a `WebSearchError` becomes a returned tool failure the model reads and works around, like any other tool error. Spend: uncounted — the second admitted gap.
+Trigger: the model decides to search. Tier: its own — a dedicated model selection, independent of the chat tiers, which is exactly the kind of fact that lives nowhere except in an inventory. Failure policy: a `WebSearchError` becomes a returned tool failure the model reads and works around, like any other tool error. Spend: uncounted — the second admitted gap.
 
 An exception you can point to, with a reason attached, is fine. The unacceptable thing is an exception nobody knows exists.
 
@@ -172,7 +172,7 @@ export interface UtilityOptions {
   readonly role?: 'fast' // [!code highlight]
 }
 
-export class UtilityLlm extends Context.Tag('@efferent/core/UtilityLlm')<
+export class UtilityLlm extends Context.Tag('@xandreed/sdk-core/UtilityLlm')<
   UtilityLlm,
   {
     readonly complete: (
@@ -201,7 +201,7 @@ Five helpers, five degrade paths, and every one lands on the same principle: **a
 
 The judge's version of this is compiler-checked: its error channel is `never`, meaning Effect's type system can prove every failure has been converted into the `prompt` verdict. Add an unhandled failure path in a refactor and the signature breaks at build time. The title's version is the other extreme — fired as a daemon after the turn already completed, with all outcomes ignored:
 
-```ts title="packages/code/src/cli/actions/submit.ts"
+```ts title="packages/cli/src/cli/actions/submit.ts"
 // The session's first exchange just landed: name it on the fast tier,
 // off the critical path. A missing credential must never surface here.
 if (firstExchange) {
@@ -223,7 +223,7 @@ if (firstExchange) {
 
 A census of call sites implies a census of spend, and the role vocabulary is what makes one possible. [efferent](https://github.com/xandreeddev/efferent)'s session ledger is keyed by role, not by model:
 
-```ts title="packages/code/src/cli/presentation/sidePane.ts"
+```ts title="packages/cli/src/cli/presentation/sidePane.ts"
 export interface SessionStats {
   // …
   /** Billed tokens per model role (general / code / fast). */
@@ -241,13 +241,13 @@ export const accumulateRoleSpend = (
 })
 ```
 
-Every row of the census names its route into this ledger: root-loop and reasoning sub-agent usage accumulate under `general`, code-writing spawns under `code`; the judge and the title daemon book their own usage directly; the compaction digests report through a loop hook that sub-agents forward to their parent, so a digest three spawns deep still lands in the session's `fast` bucket. The UI renders the sum as a `Σ general/code/fast` line — keyed by role, because "the helpers cost a third of the bill" is an actionable sentence and a flat token total is not. (What the UI does with all this is a post of its own; the census only cares that every call site has a destination.)
+Every row of the census names its route into this ledger: root-loop and reasoning sub-agent usage accumulate under `general`, code-writing spawns under `code`; the judge and the title daemon book their own usage directly; the compaction digests report through a loop hook that sub-agents forward to their parent, so a digest three spawns deep still lands in the session's `fast` bucket. The ledger is keyed by role — never by model — because "the helpers cost a third of the bill" is an actionable sentence and a flat token total is not. (What the UI does with all this is a post of its own; the census only cares that every call site has a destination.)
 
 And two call sites *don't* have one. The handoff brief and web search bill real tokens that no ledger sees, and the map's accounting section names both, explains exactly what each fix needs — `WebSearch` returning usage alongside its answer, `generateHandoffBrief` reporting usage to its caller — and calls them the next slice. I'd argue the documented gap is the most load-bearing part of the whole document. An inventory that quietly omits two rows is worse than no inventory, because it teaches people to trust a wrong number. An inventory that says "these two are missing, here's why, here's the fix" is a to-do list with an audit trail.
 
 ## Ship the map
 
-Everything above exists in [efferent](https://github.com/xandreeddev/efferent) as a checked-in document: `docs/models.md`, titled "Model usage map." It opens with the one rule, tabulates all nine call sites (the six in-app rows plus the eval ones), explains how a selection becomes a client, lists the non-inference provider traffic that bills no tokens (model catalogue fetches, OAuth refresh — completeness means listing what *doesn't* count too), and ends with the accounting summary and its admitted gaps.
+Everything above exists in [efferent](https://github.com/xandreeddev/efferent) as a checked-in document: `docs/models.md`, titled "Model usage map." It opens with the one rule, tabulates all nine call sites (the in-app rows — with the loop split into root and sub-agent entries — plus the eval ones), explains how a selection becomes a client, lists the non-inference provider traffic that bills no tokens (model catalogue fetches, OAuth refresh — completeness means listing what *doesn't* count too), and ends with the accounting summary and its admitted gaps.
 
 The claim I want to leave you with: **every LLM application should ship this document.** Not a wiki page — a file in the repo, next to the code it indexes, versioned with it. It's the same genre as a threat model or a dependency policy: a structured answer to a question that will otherwise be answered ad hoc, during an incident, by whoever is on call. If yours has one row, write the one-row version; the value is the discipline of having a place where the next row must be written down.
 

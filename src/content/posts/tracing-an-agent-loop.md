@@ -1,7 +1,7 @@
 ---
 title: 'Name spans for humans, query them by attribute'
 description: 'What to trace in an agent loop — and why the stable attribute you put on a span outlives the name you give it, for dashboards and for evals alike.'
-pubDate: 2026-07-27
+pubDate: 2026-09-01
 tags: [agents, effect, observability]
 series:
   name: 'Observing an agent'

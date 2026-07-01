@@ -1,7 +1,7 @@
 ---
 title: 'Your agent is a protocol, not an app'
-description: 'One loop, one typed event stream, four renderers — why headless modes fall out of the architecture for free.'
-pubDate: 2026-07-22
+description: 'One loop, one typed event stream, five renderers — why headless modes fall out of the architecture for free.'
+pubDate: 2026-08-25
 tags: [agents, effect, typescript]
 series:
   name: 'Building a coding agent'
@@ -13,9 +13,9 @@ There's a one-question architecture review for any coding agent, and you don't n
 
 Pipe a prompt into it from a shell script. Run it in CI. Drive it from an editor plugin. If the answer to all three is "well… it opens a terminal UI," you're looking at an app that happens to contain an agent. The loop and the interface grew up together until nobody can say where one ends, and now every consumer that isn't a human at a terminal is locked out — permanently, because the assumptions are load-bearing.
 
-The alternative is to treat the agent as a **protocol**: the loop's only output is a typed stream of events, and every interface — terminal UI, one-shot print, JSON lines, JSON-RPC — is a small program that consumes that stream and renders it somehow. New consumer, new renderer, loop untouched.
+The alternative is to treat the agent as a **protocol**: the loop's only output is a typed stream of events, and every interface — terminal UI, one-shot print, JSON lines, JSON-RPC, a persistent daemon serving attached clients — is a small program that consumes that stream and renders it somehow. New consumer, new renderer, loop untouched.
 
-This post is the case for that inversion, with receipts from [efferent](https://github.com/xandreeddev/efferent), the coding agent I'm building on Effect. Its terminal UI is the client with all the screenshots. It is also, architecturally, just client number one of four.
+This post is the case for that inversion, with receipts from [efferent](https://github.com/xandreeddev/efferent), the coding agent I'm building on Effect. Its terminal UI is the client with all the screenshots. It is also, architecturally, just client number one of five.
 
 ## The trap: the UI leaks into the loop
 
@@ -49,7 +49,7 @@ Call the property we lost **headless**: the ability to run with no human and no 
 
 ## The inversion: the events are the product
 
-In [efferent](https://github.com/xandreeddev/efferent), the agent loop's entire observable output is a value of one union type. This file is the contract every interface is built against — worth reading in full, because everything else in this post is a consumer of it:
+In [efferent](https://github.com/xandreeddev/efferent), the agent loop's entire observable output is a value of one union type. This file is the contract every interface is built against — worth reading in full, because everything else in this post is a consumer of it. (In the repo it's an Effect `Schema.Union`, so the same shape doubles as a runtime decoder; here it's rendered as the plain type it derives.)
 
 ```ts title="packages/sdk-core/src/entities/AgentEvent.ts"
 export type AgentEvent = // [!code highlight]
@@ -112,11 +112,33 @@ export type AgentEvent = // [!code highlight]
       readonly usage: TokenUsage
     }
   | {
+      readonly type: 'learned' // the turn-boundary distiller persisted reusable lessons
+      readonly lessons: ReadonlyArray<{ name: string; kind: string }>
+    }
+  | {
+      readonly type: 'gate' // the mandatory verify gate ruled on a fleet's deliverable
+      readonly verdict: 'sound' | 'needs_work' | 'blocked' | 'unavailable'
+      readonly reasons: ReadonlyArray<string> // …
+    }
+  | {
       readonly type: 'agent_end'
       readonly finalText: string
       readonly messages: ReadonlyArray<AgentMessage>
     }
   | { readonly type: 'error'; readonly message: string }
+  | {
+      readonly type: 'llm_retry' // a transient provider failure is being retried with backoff
+      readonly reason: string
+      readonly attempt: number
+      readonly maxAttempts: number
+      readonly delayMs: number
+    }
+  | {
+      readonly type: 'bg_output' // a background shell process wrote a chunk
+      readonly processId: string
+      readonly stream: 'stdout' | 'stderr'
+      readonly chunk: string
+    }
   // the run is parked on a bash-approval request; `approval_resolved`
   // clears the sheet once any attached client answers
   | {
@@ -144,7 +166,7 @@ export type AgentEvent = // [!code highlight]
     }
 ```
 
-Read it as a narration grammar. A run is a sequence of turns (`turn_start`); each turn produces prose (`assistant_message` — with the model's reasoning and token usage when available) and tool activity (`tool_call_start` / `tool_call_end`, paired by the provider's call id, because two same-named calls in one turn share a name but not an id). Sub-agents open and close their own bracketed stories (`subagent_start` / `subagent_end`, with a summary and the files they changed), nested via `parentNodeId` when a sub-agent spawns its own. Skills loading and helper-tier LLM calls — the fast-tier background work, like compaction digests — get their own lines so a consumer can keep an honest spend ledger. Approvals surface as data too (`approval_needed` and, when nobody's watching, `needs_human` with `parked: true`), and `board_note` carries inter-agent fleet chatter — both consumed below. And `agent_end` closes the run with the final text plus the full message transcript.
+Read it as a narration grammar. A run is a sequence of turns (`turn_start`); each turn produces prose (`assistant_message` — with the model's reasoning and token usage when available) and tool activity (`tool_call_start` / `tool_call_end`, paired by the provider's call id, because two same-named calls in one turn share a name but not an id). Sub-agents open and close their own bracketed stories (`subagent_start` / `subagent_end`, with a summary and the files they changed), nested via `parentNodeId` when a sub-agent spawns its own. Skills loading and helper-tier LLM calls — the fast-tier background work, like compaction digests — get their own lines so a consumer can keep an honest spend ledger. Approvals surface as data too (`approval_needed` and, when nobody's watching, `needs_human` with `parked: true`), and `board_note` carries inter-agent fleet chatter — both consumed below. The vocabulary has kept growing the additive way since: `learned` and `gate` narrate the self-improving loop's distiller and the fleet's mandatory verify gate, `llm_retry` makes a provider backoff visible instead of a silent hang, `bg_output` streams a background shell's chunks. And `agent_end` closes the run with the final text plus the full message transcript.
 
 Two design choices in that union do most of the work. First, **everything is data, nothing is presentation** — no color, no layout, no strings pre-formatted for a terminal. `args` and `result` are `unknown` because they're tool-shaped, not display-shaped. Second, the events carry enough identity (`turnIndex`, call ids, `nodeId`) that a consumer can reconstruct *structure* — which call belongs to which turn belongs to which sub-agent — instead of just receiving a flat log.
 
@@ -152,18 +174,18 @@ Once the vocabulary exists, every interface becomes a **fold**: a function that 
 
 ### How events leave the loop without the loop knowing
 
-The loop itself never touches stdout, a socket, or a screen. It accepts an optional bag of **hooks** — callbacks like `onTurnStart`, `onAssistantMessage`, `onBeforeToolCall`, `onAgentEnd`, each an Effect — and invokes them at the corresponding moments. (One hook, `onBeforeToolCall`, returns a decision and can block a call; the rest are pure observation.) The hook surface lives in the core package, which has no idea what a terminal is.
+The loop itself never touches stdout, a socket, or a screen. It accepts an optional bag of **hooks** — callbacks like `onTurnStart`, `onAssistantMessage`, `onBeforeToolCall`, `onAgentEnd`, each an Effect — and invokes them at the corresponding moments. (A couple return decisions — `onBeforeToolCall` can block a call, `onTransformContext` can reshape the next turn's context — the rest are pure observation.) The hook surface lives in the core package, which has no idea what a terminal is.
 
-The CLI wires those hooks to a queue, and this adapter is mechanical — one `Queue.offer` per hook:
+The CLI wires those hooks to a **publish sink**, and this adapter is mechanical — one `publish` per hook:
 
-```ts title="packages/code/src/events.ts"
-export const makeEventHooks = <R = never>(
-  queue: Queue.Queue<AgentEvent>, // [!code highlight]
+```ts title="packages/cli/src/events.ts"
+export const makeAgentEventHooks = <R = never>(
+  publish: (event: AgentEvent) => Effect.Effect<void>, // [!code highlight]
 ): AgentHooks<R> => ({
   onTurnStart: (event) =>
-    Queue.offer(queue, { type: 'turn_start', turnIndex: event.turnIndex }),
+    publish({ type: 'turn_start', turnIndex: event.turnIndex }),
   onAfterToolCall: (event) =>
-    Queue.offer(queue, {
+    publish({
       type: 'tool_call_end',
       turnIndex: event.turnIndex,
       id: event.toolCallId,
@@ -171,11 +193,17 @@ export const makeEventHooks = <R = never>(
       ok: event.ok,
       result: event.result,
     }),
-  // … one offer per hook, same shape throughout
+  // … one publish per hook, same shape throughout
 })
+
+/** The queue flavor the one-shot modes use. */
+export const makeEventHooks = (queue: Queue.Queue<AgentEvent>) =>
+  makeAgentEventHooks((event) => Queue.offer(queue, event))
 ```
 
-A queue is the right seam because the producer and the consumer are different concerns running on different fibers: hooks fire from wherever the loop happens to be — possibly four tool handlers deep, possibly inside a parallel sub-agent — and offering onto the queue costs them nothing. One consumer fiber drains it at whatever pace rendering takes. The loop cannot tell whether anything is listening, which is exactly the property that makes four clients possible.
+The sink is the seam's seam: the one-shot modes plug in a queue; the daemon (client five, below) plugs in a per-session ledger that fans the same events out to any number of attached clients. Event construction lives once, destinations are somebody else's choice.
+
+A queue is the right seam because the producer and the consumer are different concerns running on different fibers: hooks fire from wherever the loop happens to be — possibly four tool handlers deep, possibly inside a parallel sub-agent — and offering onto the queue costs them nothing. One consumer fiber drains it at whatever pace rendering takes. The loop cannot tell whether anything is listening, which is exactly the property that makes five clients possible.
 
 ### The flush sentinel, or: how a one-shot mode knows it's done
 
@@ -185,19 +213,19 @@ A one-shot mode runs the agent, renders the events, prints a result, and exits. 
 
 The deterministic fix is a **sentinel** — a marker value with no meaning except "you have reached the end." After the run completes, the mode offers `{ type: 'flush' }`; since nothing else produces anymore, it is *strictly* the last element. The consumer returns when it takes it, and the mode joins the consumer fiber:
 
-```ts title="packages/code/src/modes/json.ts"
+```ts title="packages/cli/src/modes/json.ts"
 // The run is done — nothing else produces, so the sentinel is strictly last.
 yield* Queue.offer(queue, { type: 'flush' }) // [!code highlight]
 yield* Fiber.join(consumer)
 ```
 
-`Fiber.join` waits for the consumer to finish — so by the next line, every event that ever entered the queue has been fully rendered. No sleeps, no races, no half-written lines. The sentinel is internal plumbing: every consumer checks for it first and exits, and it is never serialized to stdout, stderr, or an RPC notification. A consumer of the *protocol* never sees it; only consumers of the *queue* do.
+`Fiber.join` waits for the consumer to finish — so by the next line, every event that ever entered the queue has been fully rendered. No sleeps, no races, no half-written lines. The sentinel is internal plumbing: every consumer checks for it first and exits, and it is never serialized to stdout, stderr, an RPC notification, or the daemon's SSE stream. A consumer of the *protocol* never sees it; only consumers of the *queue* do.
 
-That's the entire substrate: a vocabulary, a queue, a sentinel. Now the four clients.
+That's the entire substrate: a vocabulary, a queue, a sentinel. Now the five clients.
 
 ## Client one: the TUI
 
-The default when you run `efferent` in an interactive terminal is the full TUI — OpenTUI's native renderer driving SolidJS signals, with foldable turns, a live activity tree, syntax-highlighted diffs, and the approval modals. As a consumer it's the deepest fold by far: the same queue drains into fine-grained signals and the view updates reactively. It's also the only client that costs real money to load, so the composition root imports it lazily — the native FFI renderer is touched only on this path, and `tui.ts` at the mode seam is 19 lines of input type. How that client works inside is a post of its own; for this post the load-bearing fact is that the TUI holds no privileged position. It subscribes to the same events as everything below.
+The default when you run `efferent` in an interactive terminal is the full TUI — OpenTUI's native renderer driving SolidJS signals, with foldable turns, a live fleet tree, syntax-highlighted diffs, and the approval sheet. As a consumer it's the deepest fold by far: the events drain into fine-grained signals and the view updates reactively. It's also the only client that costs real money to load, so the composition root imports it lazily — the native FFI renderer is touched only on this path, and `tui.ts` at the mode seam is 42 lines of input type. How that client works inside is a post of its own; for this post the load-bearing fact is that the TUI holds no privileged position. It subscribes to the same events as everything below — so literally that, since this was drafted, the default `efferent` invocation stopped running the loop in-process at all: the TUI now attaches to a per-workspace daemon and consumes the same events over a wire (client five, below), and the view code didn't change.
 
 ## Client two: print mode — the agent as a shell command
 
@@ -209,7 +237,7 @@ efferent -p --allow-bash "fix the failing rpc test" > report.md
 
 Print mode is the agent as a well-behaved Unix citizen: run once, do the work, print the answer, exit. The discipline that makes it composable is the stream split — **stdout carries exactly one thing, the final text**; the running tool log goes to stderr, where a human can glance at progress without polluting whatever stdout is piped into. The fold is a switch statement that renders three event types and deliberately drops the rest:
 
-```ts title="packages/code/src/modes/print.ts"
+```ts title="packages/cli/src/modes/print.ts"
 const consumeEvents = (queue: Queue.Queue<AgentEvent>) =>
   Effect.gen(function* () {
     while (true) {
@@ -236,7 +264,7 @@ After the sentinel-and-join drain, one line: `process.stdout.write(result.finalT
 
 Print is also where mode *selection* earns its keep. You never asked for it in those examples — the dispatcher inferred it:
 
-```ts title="packages/code/src/main.ts"
+```ts title="packages/cli/src/main.ts"
 const resolveMode = (modeFlag, printFlag, hasPromptArg): Mode => {
   if (modeFlag !== 'auto') return modeFlag // explicit always wins
   if (printFlag) return 'print'
@@ -250,7 +278,7 @@ A prompt argument means you want an answer, not a session. Piped stdin (when the
 ## Client three: `--mode json` — the agent as a data source
 
 ```bash
-efferent --mode json 'audit packages/code for unused exports' \
+efferent --mode json 'audit packages/cli for unused exports' \
   | jq -r 'select(.type == "tool_call_start") | .toolName'
 ```
 
@@ -258,13 +286,13 @@ JSON mode is print mode's control flow with the most literal fold imaginable: ev
 
 ```
 {"type":"turn_start","turnIndex":0}
-{"type":"tool_call_start","turnIndex":0,"id":"call_x7Qf","toolName":"read_file","args":{"path":"packages/code/src/main.ts"}}
-{"type":"tool_call_end","turnIndex":0,"id":"call_x7Qf","toolName":"read_file","ok":true,"result":{"path":"packages/code/src/main.ts","content":"…","totalLines":369,"truncated":false}}
+{"type":"tool_call_start","turnIndex":0,"id":"call_x7Qf","toolName":"read_file","args":{"path":"packages/cli/src/main.ts"}}
+{"type":"tool_call_end","turnIndex":0,"id":"call_x7Qf","toolName":"read_file","ok":true,"result":{"path":"packages/cli/src/main.ts","content":"…","totalLines":863,"truncated":false}}
 {"type":"assistant_message","turnIndex":1,"text":"Three exports are never imported…","usage":{"inputTokens":18412,"outputTokens":231,"totalTokens":18643,"cacheReadTokens":15890}}
 {"type":"agent_end","finalText":"Three exports are never imported: …","messages":[…]}
 ```
 
-The renderer, in full, is the `consumeEvents` while-loop with its switch replaced by one line — `process.stdout.write(JSON.stringify(event) + '\n')`. The entire mode file is 104 lines, and most of them are the shared scaffolding every mode has (decode the conversation id, build the queue and hooks, run, drain).
+The renderer, in full, is the `consumeEvents` while-loop with its switch replaced by one line — `process.stdout.write(JSON.stringify(event) + '\n')`. The entire mode file is 157 lines, and most of them are the shared scaffolding every mode has (decode the conversation id, build the queue and hooks, run, drain).
 
 This is the mode for everything that wants to *measure* an agent rather than watch one: dashboards, run archives, cost accounting off the `usage` fields, scripts that fail a pipeline when `tool_call_end` events show `ok: false`. Note `agent_end` carries the full message transcript — heavyweight, but it means a JSONL archive of a run is *complete*: you can reconstruct the conversation later without the database.
 
@@ -286,6 +314,16 @@ Same vocabulary, third rendering — here the fold wraps each event in a notific
 
 The details that make it drivable in practice: the result's `conversationId` feeds straight back into the next `agent.send` as `params.conversationId`, so multi-turn conversations are a loop in the *calling* program. A per-request `cwd` re-discovers the workspace's scope tree, so one server process can serve requests against different projects. Malformed input gets proper JSON-RPC errors (`-32700` parse error, `-32601` unknown method, `-32602` bad params, `-32000` when the run itself failed) rather than a crash. And v1 is deliberately modest: one request at a time — concurrent `agent.send` calls queue behind each other.
 
+## Client five arrived while this was in drafts
+
+This section wasn't in the outline, because the client didn't exist yet. It's now the strongest evidence in the post, so it goes in.
+
+Since this was drafted, [efferent](https://github.com/xandreeddev/efferent) grew its real "agent as a server": a persistent per-workspace **daemon** (`efferent daemon start` — or just `efferent`, since the default invocation now auto-attaches, spawning the daemon if it's absent). The loop runs in the daemon; every frontend became a thin client — including the TUI, which drives the same workspace over the wire without knowing it. The seam is a `Workspace` port in core (`packages/sdk-core/src/ports/Workspace.ts`) — the complete command/query surface a frontend needs (`send`, `subscribe`, `interrupt`, `approve`, …), expressed once, transport-agnostically — with two implementations: the in-process one the daemon hosts (the sole owner of live state) and a remote one that speaks HTTP/SSE. And the stream a client subscribes to is, of course, the same `AgentEvent` union — now stamped with a per-session sequence number, so a reconnecting client replays the gap instead of losing events.
+
+What the daemon bought: several clients attached to one running workspace, all seeing the same story; a closed laptop lid that doesn't kill the run — reattach and the in-flight turn resumes; approvals that park as data until *any* attached client answers. What it cost the architecture: almost nothing. The union gained a `seq` wrapper and became an Effect `Schema` so it could be decoded off a wire; the hooks' publish sink got a second destination (a per-session event ledger fanning out over a `PubSub` instead of a single queue); the loop still has no idea any of it exists.
+
+It also settled RPC's fate: `--mode rpc` is now a v1 shim the daemon API supersedes — same idea, weaker on every axis (one client, no reconnect, no cancel) — and it's slated for deletion. Which is the protocol-first bet paying out in both directions: clients are cheap to add, and just as cheap to retire.
+
 ## History without a UI: `--resume`
 
 Conversations in [efferent](https://github.com/xandreeddev/efferent) persist to SQLite at `~/.efferent/efferent.db` no matter which mode wrote them, because persistence is a port of the core — a `ConversationStore` the loop appends to — not a feature of any client. The corollary is that **session continuity and the TUI are fully decoupled**:
@@ -295,7 +333,7 @@ efferent --resume 0b6e3a52-7c41-4d2e-9f0a-b3d1c5e8a2f4 \
   --allow-bash 'apply step 2 of the plan we agreed on'
 ```
 
-That's print mode picking up a conversation — same history, same context, no TUI. The id can come from the RPC response above, or from a morning TUI session (the same flag without a prompt reopens it interactively; `:sessions` lists every conversation in the workspace). Plan a refactor interactively over coffee, then let a script grind through the steps headlessly in the afternoon — and when you reopen the TUI, the startup picker lists the conversations the headless runs extended, because they were never anything other than rows in the same store.
+That's print mode picking up a conversation — same history, same context, no TUI. The id can come from the RPC response above, or from a morning TUI session (the same flag without a prompt reopens it interactively; `:browse` lists every conversation in the workspace). Plan a refactor interactively over coffee, then let a script grind through the steps headlessly in the afternoon — and when you reopen the TUI, the startup picker lists the conversations the headless runs extended, because they were never anything other than rows in the same store.
 
 ## Headless safety: a standing decision, not a dialog
 
@@ -318,8 +356,8 @@ Bash: ({ command, timeout }) =>
 
 Because tools declare their failures as returnable results, that error lands in the model's context as an ordinary tool outcome — so the agent routes around it, leaning on the read and search tools and telling you what it *would* have run, instead of the turn dying. With the flag, the `Approval` port — the interface every approval decision flows through — is satisfied by an allow-all implementation provided as a layer:
 
-```ts title="packages/code/src/modes/json.ts"
-yield* runAgent(config, cid, input.prompt, hooks, input.cwd).pipe(
+```ts title="packages/cli/src/modes/json.ts"
+yield* runFleetToCompletion({ /* … the mode's run loop … */ }).pipe(
   Effect.provide(runtime.handlerLayer),
   // Headless: --allow-bash already encodes the standing decision.
   Effect.provide(ApprovalAllowAllLive), // [!code highlight]
@@ -330,34 +368,35 @@ The port stays in every signature; only the implementation swapped — the same 
 
 Credentials follow the same logic. Headless modes can't run the interactive `:login` flow, so they require a credential already on disk in `~/.efferent/auth.json`, written by a prior TUI login. If it's empty, the mode exits immediately with a one-line hint instead of failing mid-run — and there's deliberately no env-var fallback for provider keys in the product path. A standing decision should look like a file you placed, not a variable you forgot was set.
 
-## Why a mode costs a hundred lines
+## Why a mode costs a couple hundred lines
 
 Now the claim in the title. "Headless support" sounds like a feature — a milestone, a refactor, a label on a roadmap. In this architecture it's none of those, and the line counts make the argument better than prose can:
 
 | File | Lines | What it is |
 | --- | --- | --- |
-| `events.ts` | 173 | the entire contract: the union + one `Queue.offer` per hook |
-| `modes/json.ts` | 104 | JSONL renderer |
-| `modes/print.ts` | 144 | one-shot renderer, stdout/stderr split |
-| `modes/rpc.ts` | 270 | JSON-RPC server (half is protocol plumbing: framing, error codes) |
-| `modes/tui.ts` | 19 | the seam; the actual TUI hangs off the same contract |
+| `sdk-core …/AgentEvent.ts` | 218 | the vocabulary: one schema union, doubling as the daemon's wire payload |
+| `cli …/events.ts` | 154 | the adapter: one publish per hook — a queue for the modes, a ledger for the daemon |
+| `modes/json.ts` | 157 | JSONL renderer |
+| `modes/print.ts` | 196 | one-shot renderer, stdout/stderr split |
+| `modes/rpc.ts` | 283 | JSON-RPC server (half is protocol plumbing: framing, error codes) |
+| `modes/tui.ts` | 42 | the seam; the actual TUI hangs off the same contract |
 
 Every mode has the same skeleton — decode a conversation id, make a queue, fork the consumer (the fold), wire hooks, run the agent, drain with the sentinel — and differs only in the fold. The loop's files were not touched to add any of them; `runAgent`'s signature never changed. That's the test of whether something is a feature or a property: features show up as diffs across the system, properties show up as new files beside old ones.
 
-The two enablers were both decided before any second client existed. The loop was written against an optional hook surface in core, where nothing knows stdout exists. And the queue made "who consumes this and how fast" somebody else's problem from day one. Given those, a mode *can't* be much more than a hundred lines, because there's nothing left for it to do except fold.
+The two enablers were both decided before any second client existed. The loop was written against an optional hook surface in core, where nothing knows stdout exists. And the queue made "who consumes this and how fast" somebody else's problem from day one. Given those, a mode *can't* be much more than a couple hundred lines, because there's nothing left for it to do except fold.
 
 ## What the protocol costs
 
 Honesty section. Three real costs, none of them dealbreakers, all of them permanent.
 
-**A frozen vocabulary is API surface.** The moment one CI script greps your JSONL for `"type":"tool_call_end"`, every rename is a breaking change — and JSONL consumers break *silently*: a `jq` filter over renamed events doesn't error, it matches nothing, and the pipeline goes green on vacuous data. Today the contract is a TypeScript type in the repo — no version field on events, no published JSON Schema — so the discipline is all convention: evolve additively (new optional fields, new variants), and write consumers that ignore what they don't recognize. That's a promissory note that comes due the day there's an external consumer I can't see.
+**A frozen vocabulary is API surface.** The moment one CI script greps your JSONL for `"type":"tool_call_end"`, every rename is a breaking change — and JSONL consumers break *silently*: a `jq` filter over renamed events doesn't error, it matches nothing, and the pipeline goes green on vacuous data. The daemon forced one upgrade here: the union is now an Effect `Schema`, so events are decoded (not just typed) at the wire — but there's still no version field on events and no published spec, so the discipline is all convention: evolve additively (new optional fields, new variants), and write consumers that ignore what they don't recognize. That's a promissory note that comes due the day there's an external consumer I can't see.
 
 **The granularity is per-message, not per-token.** `assistant_message` lands when a turn's text is complete. For pipes, CI, and orchestrators that's exactly right — but a client that wants typewriter-style streaming needs a delta event the vocabulary doesn't have, and adding one is a contract change for every existing consumer, not a tweak. The vocabulary you freeze is also the granularity you freeze.
 
-**Headless approval is all-or-nothing.** The TUI's gate is graded — a judge pre-screens, grants are scoped to folders, denials carry reasons the model adapts to. `--allow-bash` collapses all of that to one bit. There's no headless middle tier today (say, an allowlist file the static gate consults), so the honest operational advice is blunt: a standing yes is standing risk, and an unattended agent with bash deserves a container. Two smaller warts in the same drawer: print and JSON modes mint a conversation id but never surface it — resuming currently means fishing it out of the TUI or driving RPC, which returns it. And RPC v1 has no cancel method; Esc has no wire equivalent yet.
+**Headless approval is coarser than interactive.** The TUI's gate is graded — a judge pre-screens, grants are scoped to folders, denials carry reasons the model adapts to. In the one-shot modes, `--allow-bash` collapses all of that to one bit, so the honest operational advice stays blunt: a standing yes is standing risk, and an unattended agent with bash deserves a container. A middle tier did land since this was drafted, on the *scheduled* path: unattended runs keep the judge for ordinary in-scope work, and anything it won't clear is denied-with-reason and parked as a `needs_human` decision for a human to review later — never silently allowed. Two smaller warts in the same drawer: print and JSON modes mint a conversation id but never surface it — resuming currently means fishing it out of the TUI or driving RPC, which returns it. And RPC v1 has no cancel method — cancellation landed on the daemon API instead (`interrupt` is a `Workspace` method), one more reason RPC is headed for deletion.
 
 ## The product is the protocol
 
 The conclusion I keep arriving at from different directions: **the most important user of your agent is not a person, and the interface you're proudest of is the one you should trust least to drive the architecture.** A TUI seduces you into terminal assumptions precisely because it's where you live all day. But look at where agents actually run as they become infrastructure — CI jobs, cron, editor backends, other agents' tool calls — and almost none of those seats have a human in them.
 
-So invert the build order. Define the event vocabulary first, make the loop emit it blindly, and write your beloved interactive client as *a* fold — the first, not the foundation. Everything in this post followed from that ordering: print mode is a fold that drops events, JSON mode is a fold that serializes them, RPC is a fold that envelopes them, and the TUI is a fold with very good taste. One hundred and seventy-three lines of contract, four clients, and the certainty that client five — whatever drives [efferent](https://github.com/xandreeddev/efferent) next year — is a new file, not a rewrite. The TUI is the demo. The protocol is the product.
+So invert the build order. Define the event vocabulary first, make the loop emit it blindly, and write your beloved interactive client as *a* fold — the first, not the foundation. Everything in this post followed from that ordering: print mode is a fold that drops events, JSON mode is a fold that serializes them, RPC is a fold that envelopes them, the daemon is a fold that re-publishes the stream to whoever attaches, and the TUI is a fold with very good taste. Two hundred lines of contract, five clients — and the prediction this draft originally closed on, that client five would be a new file rather than a rewrite, got tested before the post even shipped. The daemon arrived. It was new files beside old ones. The TUI is the demo. The protocol is the product.

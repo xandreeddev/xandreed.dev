@@ -1,7 +1,7 @@
 ---
 title: 'Pay for the index, not the book: extending an agent with markdown on disk'
 description: 'Skills and instruction files make the filesystem a plugin system: cheap always-on index, bodies loaded on demand.'
-pubDate: 2026-07-03
+pubDate: 2026-07-31
 tags: [agents, ai, effect]
 draft: true
 ---
@@ -24,7 +24,7 @@ Start with the unit. A **skill** is a markdown file with two parts: a tiny front
 ---
 name: commit-style
 description: How to write a commit message for this repo — lowercase verb-led
-  title, prose body, HEREDOC commit. Read this whenever you are about to write
+  title, prose body, HEREDOC commit. Read this whenever you're about to write
   or propose a commit message.
 ---
 
@@ -73,7 +73,7 @@ The highlighted line is the design decision this post is named after. The body i
 
 So how does the model learn the skill exists? At startup, [efferent](https://github.com/xandreeddev/efferent) injects the names and descriptions — only those — into the system prompt. The rendering is a dozen lines:
 
-```ts title="packages/code/src/prompts/coder.ts"
+```ts title="packages/cli/src/prompts/coder.ts"
 const renderSkillsSection = (skills: ReadonlyArray<Skill>): string => {
   if (skills.length === 0) return ''
   const lines = skills.map((s) => `- ${s.name}: ${s.description}`).join('\n') // [!code highlight]
@@ -99,7 +99,7 @@ document with steps for handling a specific kind of task. Read one with
 then follow the steps.
 
 - commit-style: How to write a commit message for this repo — lowercase
-  verb-led title, prose body, HEREDOC commit. Read this whenever you are
+  verb-led title, prose body, HEREDOC commit. Read this whenever you're
   about to write or propose a commit message.
 - db-migration: How to create, name, and verify a schema migration —
   includes the generator command and the rollback check.
@@ -179,7 +179,7 @@ Two details pay rent here. First, the failure: `failureMode: 'return'` means a b
 
 Nothing registers a skill. [efferent](https://github.com/xandreeddev/efferent) finds them at startup by walking a search path of `.efferent/skills/` directories, from the working directory up through every ancestor, ending at your home directory:
 
-```ts title="packages/code/src/usecases/loadSkills.ts"
+```ts title="packages/cli/src/usecases/loadSkills.ts"
 /** cwd/.efferent/skills, each ancestor up to root, then home (deduped). */
 const skillSearchPath = (cwd: string, homeDir: string) => {
   const out: string[] = []
@@ -216,13 +216,13 @@ The convention: a file named `AGENT.md` anywhere from the filesystem root down t
 
 Because this content rides along on every request, it's the one place the mechanism enforces a budget:
 
-```ts title="packages/code/src/usecases/discoverInstructionFiles.ts"
+```ts title="packages/cli/src/usecases/discoverInstructionFiles.ts"
 /** Per-file char cap in the rendered prompt. */
 export const MAX_INSTRUCTION_FILE_CHARS = 4_000
 /** Total char budget for the whole `# Instructions` section. */
 export const MAX_TOTAL_INSTRUCTION_CHARS = 12_000 // [!code highlight]
 
-const INSTRUCTION_FILE_NAMES = ['AGENT.md', 'AGENT.local.md'] as const
+const INSTRUCTION_FILE_NAMES = ['AGENT.md', 'AGENT.local.md'] // …internal overlay files elided
 
 export const discoverInstructionFiles = (
   cwd: string,
@@ -268,7 +268,7 @@ The mechanism is the easy half. After writing and rewriting [efferent](https://g
 
 **Name the task, not the topic.** `commit-style`, `db-migration`, `release` — a skill is the answer to "how do I do X here," so its name should be an X. A skill named `git` or `database` is a filing cabinet, not a procedure, and the model has no moment at which it obviously applies.
 
-**The description is the retrieval key — include the trigger.** The model decides whether to open the book from the one-liner alone, so write the one-liner for that decision. The real `commit-style` description ends with *"Read this whenever you are about to write or propose a commit message."* That clause isn't decoration; it's the condition-action rule that makes the lookup reliable. A description that just summarizes the topic makes the model infer when it's relevant; a description that states the trigger makes it match.
+**The description is the retrieval key — include the trigger.** The model decides whether to open the book from the one-liner alone, so write the one-liner for that decision. The real `commit-style` description ends with *"Read this whenever you're about to write or propose a commit message."* That clause isn't decoration; it's the condition-action rule that makes the lookup reliable. A description that just summarizes the topic makes the model infer when it's relevant; a description that states the trigger makes it match.
 
 **Put the commands in.** The body should contain the exact incantations — `git log --oneline -5`, the real generator command with its real flags — not descriptions of them. The model executes what it reads; a skill that says "run the usual checks" outsources the hard part back to guessing. The best skills end with a verification step, because "how do I know it worked" is part of the procedure, and a model that reads it will actually run it.
 

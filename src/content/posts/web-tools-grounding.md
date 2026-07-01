@@ -1,7 +1,7 @@
 ---
 title: 'Your model provider is already a search engine'
 description: 'Agent web access with no extra key: server-side grounding for discovery, plain HTTP for reading.'
-pubDate: 2026-07-13
+pubDate: 2026-08-11
 tags: [ai, agents]
 draft: true
 ---
@@ -66,7 +66,7 @@ export interface WebSearchResult {
   readonly sources: ReadonlyArray<{ title: string; url: string }>
 }
 
-export class WebSearch extends Context.Tag('@efferent/core/WebSearch')<
+export class WebSearch extends Context.Tag('@xandreed/sdk-core/WebSearch')<
   WebSearch,
   {
     readonly search: (query: string) => Effect.Effect<WebSearchResult, WebSearchError> // [!code highlight]
@@ -92,10 +92,11 @@ const resolveSearchModel = (auth, settings) =>
     // …
     // 3. otherwise: whichever provider you're logged into (Google preferred)
     if ((yield* auth.get('google')) !== undefined) {
-      return { provider: 'google', modelId: 'gemini-3.5-flash' } // [!code highlight]
+      return { provider: 'google', modelId: 'gemini-2.0-flash' } // [!code highlight]
     }
-    const openai = yield* auth.get('openai')
-    if (openai?.type === 'api_key') {
+    // Any OpenAI credential — API key OR subscription OAuth. The key/token is
+    // resolved per call, refreshing a near-expiry OAuth token.
+    if ((yield* auth.get('openai')) !== undefined) {
       return { provider: 'openai', modelId: 'gpt-4o' }
     }
     return undefined
@@ -186,7 +187,7 @@ const htmlToText = (html: string): string =>
 
 Strip scripts and styles, drop every tag, decode the five entities that actually occur, collapse the whitespace wreckage. It does not preserve tables, it does not respect semantic structure, it loses link targets. It is also a dozen lines that handle the case `web_fetch` exists for — documentation, READMEs, changelogs, blog posts — remarkably well, because the consumer is a language model, and language models are extremely good at reading slightly mangled text. Fidelity that would matter for a human-facing reader mode simply doesn't pay here. (Calling the tags-to-spaces regex "parsing HTML" would get you rightly yelled at on Stack Overflow; *reducing* HTML is exactly what it is, and the function name says so.)
 
-The last line of the handler matters too: the readable text still passes through `truncateOutput`, the same head-plus-tail cap every tool's output gets — it keeps 70% from the front and 30% from the end, because long outputs tend to end in their conclusions, and marks the cut with a byte count. And when even a capped page is more than the conversation should carry, the context-compression layer downstream has the final say — what happens to oversized tool results in general is a post of its own. A fetched web page gets no special treatment: it's tool output, subject to the same budgets as a `grep` flood.
+The last line of the handler matters too: the readable text still passes through `truncateOutput`, the same head-plus-tail cap every tool's output gets — it keeps 70% from the front and 30% from the end, because long outputs tend to end in their conclusions, and marks the cut with a byte count. And when even a capped page is more than the conversation should carry, the context-compression layer downstream has the final say — what happens to oversized tool results in general is a post of its own. A fetched web page gets no special treatment: it's tool output, subject to the same budgets as a `grep` flood. (The one budget the web tools *do* own is a call-count one: a fleet sub-agent gets a per-run cap on combined `web_fetch` + `search_web` calls, because a researcher with no hard stop will over-fetch — past the cap the tools refuse with a model-readable "stop searching and report your findings.")
 
 ## The two-step the descriptions teach
 
@@ -221,7 +222,7 @@ The honest section. Choosing grounding plus plain HTTP is choosing a set of limi
 
 **Citations can be partial.** The `sources` array is what the provider chose to attach, not a complete bibliography. Sometimes a claim in the answer has no corresponding source; sometimes a source has an empty title (the adapter falls back to showing the URL). The two-step mitigates this — anything that matters gets fetched and verified — but if you need auditable provenance for every sentence, grounding alone doesn't provide it.
 
-**Coverage is your login.** "No extra key" really means "the keys you have, doubled as search keys." [efferent](https://github.com/xandreeddev/efferent) can ground against Google or OpenAI; if you're logged into neither — say you run Anthropic-only — `search_web` fails with a clear returned error and the agent works webless. (On the OpenAI side it specifically needs an API key; a subscription login doesn't carry search.) The capability is real but conditional on your provider mix, which a dedicated search vendor's key never is.
+**Coverage is your login.** "No extra key" really means "the keys you have, doubled as search keys." [efferent](https://github.com/xandreeddev/efferent) can ground against Google or OpenAI; if you're logged into neither — say you run Anthropic-only — `search_web` fails with a clear returned error and the agent works webless. (Either kind of OpenAI credential counts — an API key or a subscription OAuth login.) The capability is real but conditional on your provider mix, which a dedicated search vendor's key never is.
 
 **Fetch can't run JavaScript.** `web_fetch` reads what the server sends. A docs site that server-renders — which is most of them, and essentially all of the ones worth reading — comes through fine. A client-rendered SPA comes back as a `<div id="root">` and a script tag: thin to the point of useless. No PDFs either, no pagination, no auth walls, and the regex reducer flattens tables into word soup.
 

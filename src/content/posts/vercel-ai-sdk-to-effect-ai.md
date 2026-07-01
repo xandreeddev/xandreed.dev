@@ -1,7 +1,7 @@
 ---
 title: 'Tools are programs: a post-mortem of migrating from the Vercel AI SDK to @effect/ai'
 description: 'A migration post-mortem with the diff: what @effect/ai restructured, what survived untouched, and what it cost.'
-pubDate: 2026-06-22
+pubDate: 2026-07-21
 tags: [effect, ai, agents]
 draft: true
 ---
@@ -166,7 +166,7 @@ export const Bash = Tool.make('bash', {
 })
 
 export const codingToolkit = Toolkit.make(
-  ReadFile, WriteFile, EditFile, Bash, Grep, Glob, Ls, ReadSkill,
+  ReadFile, WriteFile, EditFile, Bash, Grep, Glob, Ls, ReadSkill, // …the set has since grown
 )
 ```
 
@@ -251,7 +251,7 @@ Almost two thousand lines, barely any of it business logic — translation, type
 
 Just as telling is what *barely changed*. The CLI drivers — print, json, rpc, TUI — took diffs of about two dozen lines each, and they're all the same diff:
 
-```ts title="packages/code/src/modes/print.ts"
+```ts title="packages/cli/src/modes/print.ts"
 import { LanguageModel } from '@effect/ai' // [!code ++]
 // …the program's stated requirements:
   | FileSystem
@@ -323,7 +323,7 @@ Time for the honest column, because some things genuinely got worse — and the 
 ```ts title="packages/sdk-core/src/usecases/agentLoop.ts"
 if (outcome._tag === 'malformed') {
   consecutiveMalformed++
-  if (consecutiveMalformed > MAX_MALFORMED) return yield* Effect.fail(outcome.err) // [!code highlight]
+  if (consecutiveMalformed >= MAX_MALFORMED) return yield* Effect.fail(outcome.err) // [!code highlight]
   const corrective: AgentMessage = {
     role: 'user',
     content:

@@ -29,7 +29,7 @@ Colocation collapses all three. The argument isn't tidiness — it's **latency o
 packages/
 ├── sdk-core/      prompts, ports, tools — the behavior being judged
 ├── sdk-adapters/  provider SDKs + IO
-├── code/          composition root + TUI
+├── cli/           composition root + TUI
 └── evals/         the judges, in the same dependency graph
 ```
 
@@ -497,7 +497,7 @@ if (reports.some((r) => r.skipped !== true && !r.passed)) process.exitCode = 1 /
 
 No credentials in the environment? The suites skip *politely* — each report says why, the exit code stays 0. A contributor cloning the repo, or a fork PR with no access to secrets, sees a wired-but-skipped harness instead of a red build; nobody learns to ignore eval failures because half of them were missing-key noise. With keys present, the contract inverts: any non-skipped suite below threshold exits 1.
 
-That exit-code-plus-`--json`-plus-clean-skip triple *is* the CI story — the runner is shaped to drop into a pipeline next to `typecheck` and `bun test`, gating behavior changes from the same checkout that gates code changes. Full honesty: the workflow file itself is still on [efferent](https://github.com/xandreeddev/efferent)'s deferred list. The harness was the hard part; the YAML is ten lines and a repository secret. And one layer below all of this, the framework itself is unit-tested with plain `bun test` — the captured-failure behavior, the in-memory store's checkpoint contract — with no model and no key. The judges are themselves judged, deterministically.
+That exit-code-plus-`--json`-plus-clean-skip triple *is* the CI story — the runner is shaped to drop into a pipeline next to `typecheck` and `bun test`, gating behavior changes from the same checkout that gates code changes. [efferent](https://github.com/xandreeddev/efferent)'s workflow does exactly that, cost-gated: evals hit a live provider, so the job fires on a `run-evals` PR label or a manual dispatch rather than on every push, a repository secret supplies the key — and without one it skips cleanly, per the contract above. And one layer below all of this, the framework itself is unit-tested with plain `bun test` — the captured-failure behavior, the in-memory store's checkpoint contract — with no model and no key. The judges are themselves judged, deterministically.
 
 ## What this costs
 

@@ -66,7 +66,7 @@ export class ConversationNotFound extends Data.TaggedError(
 )<{ readonly id: string }> {}
 
 export class ConversationStore extends Context.Tag(
-  '@efferent/core/ConversationStore',
+  '@xandreed/sdk-core/ConversationStore',
 )<
   ConversationStore,
   {
@@ -82,13 +82,13 @@ export class ConversationStore extends Context.Tag(
 
 (The `Data.TaggedError` at the top is Act II's subject — for now, read it as a failure type with a name.) Using a service is one line — `const store = yield* ConversationStore` — because a tag is itself a little effect: one that succeeds with its service. And the act of using it adds the tag to the surrounding effect's `R`. That's the part that changes how a codebase feels: **the R channel is the architecture, inferred.** A use-case that reads the store and runs shell commands has type `Effect<A, E, ConversationStore | Shell>`, whether or not you remembered to document that. You cannot quietly reach into the database from a function whose type says it doesn't.
 
-This is ports-and-adapters, but with the dependency direction enforced by the compiler. [efferent](https://github.com/xandreeddev/efferent)'s core package declares twelve such tags — `FileSystem`, `Shell`, `Approval`, `AuthStore`, `ModelRegistry`, `SettingsStore`, and so on — and imports zero provider SDKs. The adapters package implements them. Core compiles without knowing Postgres exists.
+This is ports-and-adapters, but with the dependency direction enforced by the compiler. [efferent](https://github.com/xandreeddev/efferent)'s core package declares seventeen such tags — `FileSystem`, `Shell`, `Approval`, `AuthStore`, `ModelRegistry`, `SettingsStore`, and so on — and imports zero provider SDKs. The adapters package implements them. Core compiles without knowing Postgres exists.
 
 ## Act I, scene 2 — layers: constructors as values
 
 A `Layer<Out, Err, In>` is a recipe for building services out of other services. `Layer.succeed` wraps a value, `Layer.effect` runs an effect to construct one, `Layer.scoped` ties the service to a resource lifetime. Like effects, layers are values — so wiring an application is an expression. Here's the deep end first; every operator in it gets unpacked right below:
 
-```ts title="packages/code/src/main.ts"
+```ts title="packages/cli/src/main.ts"
 // Credentials + settings feed the model/search tiers. Both are provided at the
 // bottom so `ModelLive` (AuthStore + SettingsStore) and `WebSearchLive`
 // (AuthStore) resolve against them, and both stay exposed for `main` to read.
@@ -98,8 +98,9 @@ const CredentialsLive = Layer.mergeAll(
 )
 
 const AppLive = Layer.mergeAll(
-  // Both SQL stores (ConversationStore + ContextTreeStore) over one DB stack.
-  StoresLive,
+  // Both SQL stores (ConversationStore + ContextTreeStore) over one DB stack,
+  // behind a runtime-switchable facade.
+  SwitchableStoresLive,
   ModelLive,
   LocalFileSystemLive,
   LocalShellLive,
@@ -149,8 +150,8 @@ Here's the payoff for all that ceremony. [efferent](https://github.com/xandreedd
 ```ts title="packages/evals/src/env.ts"
 const FsLive = LocalFileSystemLive
 const SettingsLive = LocalSettingsStoreLive.pipe(Layer.provide(FsLive))
-// Headless credentials: read the provider keys from the env (the product CLI
-// uses auth.json via :login; evals/CI can't run the interactive flow).
+// Headless credentials: CI reads the provider keys from the env (it can't run
+// the interactive :login flow; a local eval run falls back to the CLI's auth.json).
 const CredentialsLive = Layer.mergeAll(EnvAuthStoreLive, SettingsLive) // [!code highlight]
 
 export const EvalEnvLive: Layer.Layer<EvalEnv> = Layer.mergeAll(
@@ -164,7 +165,7 @@ export const EvalEnvLive: Layer.Layer<EvalEnv> = Layer.mergeAll(
 ).pipe(Layer.provideMerge(CredentialsLive), Layer.orDie)
 ```
 
-Read it against `AppLive` above — it's the same shape, with three substitutions. The SQL stores become in-memory maps (CI shouldn't need Docker). Credentials come from env vars instead of the interactive `:login` flow. And the human approval modal becomes a five-line policy:
+Read it against `AppLive` above — it's the same shape, with three substitutions. The SQL stores become in-memory maps (CI shouldn't need Docker). Credentials come from env vars in CI instead of the interactive `:login` flow. And the human approval modal becomes a five-line policy:
 
 ```ts title="packages/sdk-core/src/ports/Approval.ts"
 export const ApprovalAllowAllLive = Layer.succeed(
@@ -307,7 +308,7 @@ const outcome = yield* LanguageModel.generateText({
 
 A `Queue` is the classic producer/consumer seam, used here to decouple agent fibers from the UI:
 
-```ts title="packages/code/src/cli/runtime.ts"
+```ts title="packages/cli/src/cli/runtime.ts"
 const eventQueue = yield* Queue.unbounded<AgentEvent>()
 const hooks = makeEventHooks(eventQueue) // every loop hook offers onto the queue
 // …the agent loop runs with these hooks; one consumer fiber drains the queue
@@ -319,7 +320,7 @@ Hooks deep inside the loop — assistant deltas, tool starts, sub-agent spawns �
 
 A bash-heavy fan-out creates a contention problem: several sub-agents can want to run a command *at the same time*, and each unapproved one may need the human. You do not want three approval sheets stacked on screen, and you *also* don't want every command in the fleet queued behind one slow prompt. The fix is a one-permit semaphore — but the interesting part is exactly *what* it guards:
 
-```ts title="packages/code/src/cli/approval.ts"
+```ts title="packages/cli/src/cli/approval.ts"
 const gate = Effect.unsafeMakeSemaphore(1)
 
 // The fast LLM judge runs OUTSIDE the gate — concurrent agents are judged in
@@ -348,8 +349,8 @@ A `Ref` is a mutable cell whose every operation is atomic, and the problem it so
 [efferent](https://github.com/xandreeddev/efferent) uses exactly that as a spend gate: every sub-agent spawned within a turn drains a single shared token pool —
 
 ```ts title="packages/sdk-core/src/usecases/tokenBudget.ts"
-/** Default pool: 1M tokens per top-level turn across all sub-agents. */
-export const DEFAULT_SUB_AGENT_TOKEN_BUDGET = 1_000_000
+/** Default pool: 4M tokens per top-level turn across all sub-agents. */
+export const DEFAULT_SUB_AGENT_TOKEN_BUDGET = 4_000_000
 
 /** Drain one call's usage from the pool. */
 export const drainPool = (
@@ -363,7 +364,7 @@ export const poolExhausted = (pool: Ref.Ref<number>): Effect.Effect<boolean> =>
   Ref.get(pool).pipe(Effect.map((n) => n <= 0)) // …
 ```
 
-— shared, not sliced: children race for the remainder rather than getting pre-committed allocations they might not use. Exhaustion circles back to Act II: a drained pool fails the next spawn with a model-readable `BudgetExhausted` value, and the model finishes the work itself instead of the turn dying.
+— shared, not sliced: children race for the remainder rather than getting pre-committed allocations they might not use. Exhaustion circles back to Act II: a drained pool fails the next spawn with a model-readable `BudgetExhausted` value, and the model wraps up with what's already in hand instead of the turn dying.
 
 ### FiberRef: ambient context, inherited
 
@@ -401,7 +402,7 @@ The highlighted field is my favorite composition in the codebase: the token pool
 
 The slowest dependency in a coding agent is the person running it. When a bash command needs approval, the requesting fiber simply parks:
 
-```ts title="packages/code/src/cli/approval.ts"
+```ts title="packages/cli/src/cli/approval.ts"
 const ask = (req: ApprovalRequest) =>
   Effect.async<ApprovalDecision>((resume) => {
     pending = (d) => resume(Effect.succeed(d)) // …

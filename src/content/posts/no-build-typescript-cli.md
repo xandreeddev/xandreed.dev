@@ -1,7 +1,7 @@
 ---
 title: 'No build step: run the source, gate with tsc, bundle only to publish'
 description: 'Bun runs the .ts you edit, tsc --noEmit becomes a pure type gate, and the bundler appears only at publish time.'
-pubDate: 2026-07-20
+pubDate: 2026-08-21
 tags: [typescript, agents]
 draft: true
 ---
@@ -41,16 +41,16 @@ Each cost compensates for a single upstream decision: *the code that runs is not
 
 Bun's runtime embeds a transpiler — the component that rewrites TypeScript syntax into JavaScript — directly in the module loader. When an import resolves to a `.ts` file, the types are stripped in memory, on load, and nothing is written to disk. There is no artifact because there is no output. "Compile" stops being a phase of your project and becomes an implementation detail of `import`, the same way you don't think about JavaScript being parsed.
 
-Here's what a project looks like when that's true. The root scripts of [efferent](https://github.com/xandreeddev/efferent), in full:
+Here's what a project looks like when that's true. The root scripts of [efferent](https://github.com/xandreeddev/efferent), trimmed to the ones that carry the model:
 
 ```json title="package.json" {3}
 {
   "scripts": {
-    "dev": "bun --hot packages/code/src/main.ts",
-    "start": "bun packages/code/src/main.ts",
+    "dev": "bun --hot packages/cli/src/main.ts",
+    "start": "bun packages/cli/src/main.ts",
     "build": "bun run scripts/build.ts",
     "eval": "bun packages/evals/src/run.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit && bun scripts/banTryCatch.ts"
   }
 }
 ```
@@ -59,21 +59,25 @@ Read it for what's missing. `dev` and `start` point at the same file — the act
 
 The entrypoint itself is directly executable, because a shebang works on a `.ts` file when the interpreter understands TypeScript:
 
-```ts title="packages/code/src/main.ts"
+```ts title="packages/cli/src/main.ts"
 #!/usr/bin/env bun // [!code highlight]
 import { Args, Command, Options } from '@effect/cli'
 import { BunContext, BunRuntime } from '@effect/platform-bun'
 // …
 ```
 
-And the development "binary" — the thing on `PATH` while hacking on the agent — is a bash wrapper of exactly two lines:
+And the development "binary" — the thing on `PATH` while hacking on the agent — is a bash wrapper whose whole job is one `exec`:
 
 ```bash
 #!/usr/bin/env bash
-exec bun "$(cd "$(dirname "$0")/.." && pwd)/packages/code/src/main.ts" "$@"
+set -euo pipefail
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+export EFFERENT_CWD="${EFFERENT_CWD:-$PWD}"
+cd "$REPO"
+exec bun "$REPO/packages/cli/src/main.ts" "$@"
 ```
 
-That's `bin/eff` in the repo, verbatim. Edit a file, run `eff`, and the behavior is the edit. There is no state of the world in which the program you observe and the program you wrote disagree — which sounds like a small guarantee until you remember how many tools exist to paper over its absence.
+That's `bin/efferent` in the repo, comments stripped (`bin/eff` is a two-line alias for it). The cwd shuffle belongs to the one asterisk we'll get to: Bun resolves Solid's JSX transform from the tsconfig at its working directory, so the wrapper runs Bun from the repo and hands the program your real directory through `EFFERENT_CWD`. Edit a file, run `eff`, and the behavior is the edit. There is no state of the world in which the program you observe and the program you wrote disagree — which sounds like a small guarantee until you remember how many tools exist to paper over its absence.
 
 ## tsc, configured to emit nothing
 
@@ -106,7 +110,7 @@ Where does the gate actually run? In [efferent](https://github.com/xandreeddev/e
 bun run typecheck && bun test   # the correctness gates (no build step for dev)
 ```
 
-There's no CI directory in the repo yet; the gates run from the working tree — before a commit, after a refactor, and (more on this below) by the agent itself after every change it makes. The repo's own architecture doc states the convention in one line: *"Bun runs `.ts` directly. No build step, no emit. `tsc --noEmit` is purely a typecheck gate."*
+Those two commands are also the entire CI: the repo's `ci.yml` runs exactly them on every push and PR — `bun run typecheck` (which chains a small repo lint, `scripts/banTryCatch.ts` — same species: verify, don't produce) and `bun test`. Locally the gates run from the working tree — before a commit, after a refactor, and (more on this below) by the agent itself after every change it makes. The repo's own architecture doc states the convention in one line: *"Bun runs `.ts` directly. No build step, no emit. `tsc --noEmit` is purely a typecheck gate."*
 
 One consequence of the decoupling deserves to be said plainly: **code that fails to typecheck still runs.** Execution never consults the checker. Mid-refactor, with forty type errors across the workspace, you can still run the one test you care about — the checker has opinions, not a veto, until you ask for the verdict. That's genuinely useful, and it's also the model's sharp edge: nothing *forces* the gate. A gate nobody runs is a gate that doesn't exist, which is precisely why it belongs in the same breath as the test suite rather than tucked into a build nobody reads.
 
@@ -114,12 +118,11 @@ One consequence of the decoupling deserves to be said plainly: **code that fails
 
 If you've run a multi-package TypeScript repo the traditional way, you know the project-references dance. **Project references** are `tsc`'s mechanism for splitting a codebase into separately compiled units: each package gets `composite: true`, emits declaration files, declares which other packages it references, and `tsc --build` walks the graph in dependency order. It works. It is also a second dependency graph you maintain by hand, a build-order constraint solver in your editor, and a steady tax of "why is this package seeing stale types" — answered, always, by rebuilding.
 
-With no emit anywhere, a workspace package stops being a compilation unit and becomes *a name for a folder of source*. Here is the entire interface of [efferent](https://github.com/xandreeddev/efferent)'s core domain package:
+With no emit anywhere on the dev path, a workspace package stops being a compilation unit and becomes *a name for a folder of source*. Here is the load-bearing interface of [efferent](https://github.com/xandreeddev/efferent)'s core domain package:
 
-```json title="packages/sdk-core/package.json" {6,7}
+```json title="packages/sdk-core/package.json" {5,6}
 {
-  "name": "@efferent/core",
-  "private": true,
+  "name": "@xandreed/sdk-core",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
@@ -128,16 +131,17 @@ With no emit anywhere, a workspace package stops being a compilation unit and be
 }
 ```
 
-The `exports` field — the map that tells a resolver which file each import specifier means — points straight at TypeScript source. When `packages/code` imports `@efferent/core`, Bun resolves through the workspace symlink in `node_modules`, lands on `src/index.ts`, and transpiles it on load like any other file. The type checker reaches the same files through `paths` mappings in `tsconfig.base.json` (`'@efferent/core': ['packages/sdk-core/src/index.ts']`) — the same fact, restated in the checker's dialect. And the root `tsconfig.json` checks everything as one flat program:
+The `exports` field — the map that tells a resolver which file each import specifier means — points straight at TypeScript source. When `packages/cli` imports `@xandreed/sdk-core`, Bun resolves through the workspace symlink in `node_modules`, lands on `src/index.ts`, and transpiles it on load like any other file. The type checker reaches the same files through `paths` mappings in `tsconfig.base.json` (`'@xandreed/sdk-core': ['packages/sdk-core/src/index.ts']`) — the same fact, restated in the checker's dialect. And the root `tsconfig.json` checks everything as one flat program:
 
 ```json title="tsconfig.json"
 {
   "extends": "./tsconfig.base.json",
-  "include": ["packages/*/src/**/*"]
+  "include": ["packages/*/src/**/*"],
+  "exclude": ["packages/website/**"]
 }
 ```
 
-Four packages — `core`, `adapters`, `cli`, `evals` — one `tsc` invocation, zero build orchestration. Change a port signature in `core` and the call sites in `cli` are red *immediately*, in the editor, with no intermediate "rebuild core's declarations" step, because there are no declarations. The packages keep their dependency direction (`cli` → `adapters` → `core`, strictly inward) through import discipline checked by that one flat program — not through build-order machinery. There is no build order because there are no builds.
+Four packages — `sdk-core`, `sdk-adapters`, `cli`, `evals` — one `tsc` invocation, zero build orchestration. Change a port signature in `sdk-core` and the call sites in `cli` are red *immediately*, in the editor, with no intermediate "rebuild core's declarations" step, because there are no declarations. The packages keep their dependency direction (`cli` → `sdk-adapters` → `sdk-core`, strictly inward) through import discipline checked by that one flat program — not through build-order machinery. There is no build order because there are no builds.
 
 The dividend compounds with repo size. Every piece of per-package ceremony — `composite`, `outDir`, `references`, declaration maps, the incremental-build cache that sometimes lies — exists to coordinate *emit* across packages. Subtract emit and the coordination problem isn't solved; it's gone.
 
@@ -145,7 +149,7 @@ The dividend compounds with repo size. Every piece of per-package ceremony — `
 
 The model has to survive contact with npm, because users don't clone monorepos — they run `npm i -g efferent` and expect a binary. Distribution is the one legitimate job the bundler has left, and it's worth looking at exactly what the published artifact is, because it inverts the usual `package.json` logic:
 
-```json title="packages/code/package.json" {12,13}
+```json title="packages/cli/package.json" {11,12}
 {
   "name": "efferent",
   "bin": { "efferent": "dist/efferent.js", "eff": "dist/efferent.js" },
@@ -160,26 +164,29 @@ The model has to survive contact with npm, because users don't clone monorepos �
     "web-tree-sitter": "0.25.10"
   },
   "devDependencies": {
-    "@efferent/adapters": "workspace:*",
-    "@efferent/core": "workspace:*",
-    "effect": "^3.21.2"
-    // …@effect/ai, @effect/cli, @effect/platform-bun, solid-js, @opentui/solid
+    "@xandreed/sdk-adapters": "workspace:*",
+    "@xandreed/sdk-core": "workspace:*",
+    "effect": "^3.21.4"
+    // …@effect/ai, @effect/cli, @effect/platform(-bun), solid-js, @opentui/solid
   }
 }
 ```
 
 Read the dependency sections twice, because they're upside down. `effect`, the entire `@effect/*` constellation, `solid-js`, the workspace packages — the whole program — sit in `devDependencies`, which npm does not install for consumers. The two-entry `dependencies` list isn't describing what the program imports; it's describing **the holes in the bundle** — the only pieces that must exist on the user's disk because they couldn't be inlined. Everything else ships *inside* `dist/efferent.js`.
 
-That file is produced by the only build script in the repository, which runs at exactly one moment — `prepublishOnly`, npm's hook before packing a release:
+That file is produced by the repo's one bundling script, which runs at exactly one moment — `prepublishOnly`, npm's hook before packing a release:
 
 ```ts title="scripts/build.ts"
 const result = await Bun.build({
-  entrypoints: [join(root, 'packages/code/src/main.ts')],
-  outdir: join(root, 'packages/code/dist'),
+  entrypoints: [join(root, 'packages/cli/src/main.ts')],
+  outdir: join(root, 'packages/cli/dist'),
   naming: 'efferent.js',
   target: 'bun',
-  external: ['@opentui/core'], // [!code highlight]
-  plugins: [(await import('@opentui/solid/bun-plugin')).createSolidTransformPlugin()],
+  external: ['@opentui/core', 'msgpackr-extract'], // [!code highlight]
+  plugins: [
+    tokenizerStub, // stubs out the providers' optional tokenizer deps — unused, ~3 MB of vocab
+    (await import('@opentui/solid/bun-plugin')).createSolidTransformPlugin(),
+  ],
 })
 ```
 
@@ -191,7 +198,7 @@ So in the project's whole life, "build" happens for roughly the ninety seconds b
 
 Why two holes? Because both sit on the one boundary a JavaScript bundler genuinely cannot cross: code that loads things *by filesystem path at runtime* instead of *by import at build time*.
 
-**`@opentui/core`** is the terminal renderer, and its hot path is a native Zig library loaded through FFI — `dlopen()` of `@opentui/core-<platform>/libopentui.so`, with the path resolved relative to the package's own install location. You can't inline a shared object into a JavaScript file, and you can't relocate the JavaScript that locates it, because its resolution logic assumes it's sitting in `node_modules` next to its platform-specific sibling package. So the whole package stays external — the single entry in the `external` array, the line highlighted above. (What the renderer does with that native library at runtime — the FFI surface, the render loop — is a post of its own; here it matters only as the thing a bundle can't swallow.)
+**`@opentui/core`** is the terminal renderer, and its hot path is a native Zig library loaded through FFI — `dlopen()` of `@opentui/core-<platform>/libopentui.so`, with the path resolved relative to the package's own install location. You can't inline a shared object into a JavaScript file, and you can't relocate the JavaScript that locates it, because its resolution logic assumes it's sitting in `node_modules` next to its platform-specific sibling package. So the whole package stays external — first in the `external` array, the line highlighted above. (Its neighbor `msgpackr-extract` is a smaller instance of the same rule: an optional native accelerator for a transitive dependency, left external so no build-machine path gets baked into the artifact — and absent from `dependencies` entirely, because `msgpackr` falls back to pure JS when it's missing.) (What the renderer does with that native library at runtime — the FFI surface, the render loop — is a post of its own; here it matters only as the thing a bundle can't swallow.)
 
 **`web-tree-sitter`** is the subtler case: it isn't in the `external` list *at all*, because no source file in the repo imports it — search the codebase and you'll find only type-level mentions. The TUI's syntax highlighting asks `@opentui/core` for its tree-sitter client, which spawns a parser **worker** that loads `web-tree-sitter` and its grammar `.wasm` files from disk, resolved from the package's install directory. The bundler never sees any of that in the import graph; there's nothing to inline and nothing to externalize. The package appears in `dependencies` — pinned to the exact version the worker expects — purely so `npm install` materializes it on disk where the runtime resolution will find it.
 
@@ -199,7 +206,7 @@ There's a transferable rule hiding in those two cases: **a bundle's boundary is 
 
 ## The inner loop, in the agent era
 
-One more pressure makes this model timely rather than just tidy. A coding agent iterating on a codebase lives inside the edit → run → verify loop thousands of times a session, and every second of build latency lands in the middle of it — multiplied. With no build phase, the loop an agent runs against [efferent](https://github.com/xandreeddev/efferent)'s own source is: edit the file, run the file, then `bun run typecheck && bun test` as the verdict (the test suite is 440+ colocated `bun test` files, property-based tests included — their design is a post of its own).
+One more pressure makes this model timely rather than just tidy. A coding agent iterating on a codebase lives inside the edit → run → verify loop thousands of times a session, and every second of build latency lands in the middle of it — multiplied. With no build phase, the loop an agent runs against [efferent](https://github.com/xandreeddev/efferent)'s own source is: edit the file, run the file, then `bun run typecheck && bun test` as the verdict (the test suite is 300+ colocated `bun test` files, property-based tests included — their design is a post of its own).
 
 The subtler win is what *can't* happen. The stale-dist bug is uniquely vicious for an agent: it edits the source, observes unchanged behavior from an artifact that wasn't rebuilt, concludes the edit was wrong, and "fixes" correct code — a confusion loop a human escapes by remembering the build exists, which is exactly the kind of out-of-band knowledge agents lack. A world where the source *is* the program removes the trap structurally. The type gate plays the same role for the agent as for CI: a cheap, total verdict it can converge against before any human looks at the diff.
 

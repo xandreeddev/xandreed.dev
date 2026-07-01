@@ -58,7 +58,7 @@ That's the whole bet in schema form. Now, how do nodes get made?
 
 ## One spawning tool, and a description that does the teaching
 
-[efferent](https://github.com/xandreeddev/efferent) has exactly one delegation tool. Not a tool per pre-configured agent role, not a YAML registry of personas — one generic `run_agent` whose parameters the model fills in at call time:
+[efferent](https://github.com/xandreeddev/efferent) has exactly one delegation tool. Not a tool per pre-configured agent role, not a YAML registry of personas — one generic `run_agent` whose parameters the model fills in at call time (named agent roles exist, but they ride the same tool as an optional parameter — the tool count stays one):
 
 ```ts title="packages/sdk-core/src/usecases/buildScopeRuntime.ts"
 const RunAgentTool = Tool.make('run_agent', {
@@ -91,7 +91,7 @@ const RunAgentTool = Tool.make('run_agent', {
 
 Three things in this declaration deserve a slow look.
 
-**The sandbox is a folder.** A spawned sub-agent can *read* anywhere in the workspace — context is cheap to gather and starving it helps nobody — but its writes and its bash commands are confined to the `folder` it was scoped to. If that folder contains a `SCOPE.md` file, its body gets injected into the sub-agent's system prompt as ambient context: the directory's local rules, conventions, and warnings, known automatically by every agent that ever works there. Folder scoping is also what makes parallelism safe later, so file it away. Nesting is bounded too — a sub-agent can spawn its own sub-agents, but past a depth limit (default 2) the tool returns a model-readable refusal: *"sub-agent nesting limit (2) reached — do this part yourself."*
+**The sandbox is a folder.** A spawned sub-agent can *read* anywhere in the workspace — context is cheap to gather and starving it helps nobody — but its writes and its bash commands are confined to the `folder` it was scoped to. If that folder contains a `SCOPE.md` file, its body gets injected into the sub-agent's system prompt as ambient context: the directory's local rules, conventions, and warnings, known automatically by every agent that ever works there. Folder scoping is also what makes parallelism safe later, so file it away. Nesting is bounded too — a sub-agent can spawn its own sub-agents, but past a depth limit (default 3) the tool returns a model-readable refusal: *"sub-agent nesting limit (3) reached — do this part yourself."*
 
 **The `nodeId` in the success type is the claim ticket.** This is the line that breaks the subprocess model. The spawn returns *immediately* — the sub-agent runs in the background — so what comes back isn't a summary at all; it's a durable reference to the context being produced. The parent keeps working, then redeems the ticket: `wait_for_agents` collects the finished summaries, or the `nodeId` is held to resume, branch, or browse the node any time later. (The fleet protocol that runs these spawns in parallel and reports them back is its own post; here the point is that the ticket outlives the call.) Every later section is a different way of redeeming it.
 
@@ -197,19 +197,21 @@ Note what staleness is *not*: an eviction. A stale node is still capital — its
 
 Sub-agents earn their keep in parallel. One assistant turn can emit several `run_agent` calls, and because each returns immediately, all of them are off and running in the background at once — so "audit these three packages" genuinely fans out into three simultaneous investigations. Folder scoping is what keeps read-only fan-out safe: agents sandboxed to disjoint folders cannot race each other's writes, so research and audits parallelize freely. *Writes* are the hazard — there is no lock, so two sub-agents editing the same area at once would corrupt each other's edits. The discipline that prevents it is prompted, not enforced: **read in parallel, write one at a time** — the model fans out investigations, then runs writers sequentially, `wait_for_agents` on each before spawning the next, ordered by dependency. (The fleet protocol underneath — non-blocking spawn, `wait_for_agents`, inter-agent messages — is its own post; the product-level point is that disjoint work parallelizes and overlapping writes are sequenced deliberately, not by a hidden lock.)
 
-Parallelism has a second failure mode, though, and it isn't correctness — it's the bill. Depth limits and step caps bound how *long* a tree can run, but a depth-2 tree with enthusiastic fan-out is still an unbounded spend. So all sub-agents spawned within one top-level turn share a single **token pool** — default one million billed tokens, adjustable with `:set subAgentTokenBudget`. Shared, not sliced: children race for the remainder rather than receiving pre-committed allocations they might never use. Every LLM call any sub-agent makes drains the pool by what the provider actually bills for it.
+Parallelism has a second failure mode, though, and it isn't correctness — it's the bill. Depth limits and step caps bound how *long* a tree can run, but a depth-2 tree with enthusiastic fan-out is still an unbounded spend. So all sub-agents spawned within one top-level turn share a single **token pool** — default four million billed tokens, adjustable with `:set subAgentTokenBudget`. Shared, not sliced: children race for the remainder rather than receiving pre-committed allocations they might never use. Every LLM call any sub-agent makes drains the pool by what the provider actually bills for it.
 
 What happens at exhaustion is the part designed with care, because both audiences of the failure are models:
 
 ```ts title="packages/sdk-core/src/usecases/tokenBudget.ts"
-/** Default pool: 1M tokens per top-level turn across all sub-agents. */
-export const DEFAULT_SUB_AGENT_TOKEN_BUDGET = 1_000_000
+/** Default pool: 4M tokens per top-level turn across all sub-agents. */
+export const DEFAULT_SUB_AGENT_TOKEN_BUDGET = 4_000_000
 
 /** The model-facing failure for a spawn attempted on a drained pool. */
 export const budgetExhaustedFailure = {
   error: 'BudgetExhausted',
   message:
-    'the sub-agent token budget for this turn is exhausted — do the remaining work yourself instead of spawning.', // [!code highlight]
+    'the sub-agent token budget for this turn is exhausted — stop spawning. ' +
+    'Synthesize and return the best result you can from the work already completed, ' + // [!code highlight]
+    'and note in your summary any remaining work so the caller can pick it up in a fresh turn.',
 } as const
 
 /** Appended to a sub-agent's summary when the pool stopped it early. */
@@ -217,7 +219,7 @@ export const BUDGET_STOP_NOTE =
   '[stopped early: the shared sub-agent token budget ran out — this result is partial]'
 ```
 
-A drained pool refuses *new* spawns with that first message — not an exception, a tool result, complete with the recommended next move, so the parent model degrades gracefully and finishes the remaining work in its own context. Sub-agents *already running* aren't killed mid-flight: each one stops at its next **turn boundary** — never mid-tool-call, which would leave a tool invocation without its result and corrupt the message history — and its summary arrives wearing the `BUDGET_STOP_NOTE`. That last detail matters more than it looks: without an explicit partial-result marker, a truncated run's mid-thought final sentence reads exactly like a confident deliverable. The same trick guards the per-agent step cap (eighty turns by default): a capped run's summary gets stamped `[stopped early: the step limit was reached — this result is partial]`.
+A drained pool refuses *new* spawns with that first message — not an exception, a tool result, complete with the recommended next move, so the parent model degrades gracefully: it stops spawning, synthesizes what was already produced, and flags what remains for a fresh turn. Sub-agents *already running* aren't killed mid-flight: each one stops at its next **turn boundary** — never mid-tool-call, which would leave a tool invocation without its result and corrupt the message history — and its summary arrives wearing the `BUDGET_STOP_NOTE`. That last detail matters more than it looks: without an explicit partial-result marker, a truncated run's mid-thought final sentence reads exactly like a confident deliverable. The same trick guards the per-agent step cap (two hundred turns by default): a capped run's summary gets stamped `[stopped early: the step limit was reached — this result is partial]`.
 
 Spend is also visible after the fact — every node records its billed usage, and the tree view shows per-node token counts. When a turn cost more than it should have, you can see exactly which subtree ate it.
 
@@ -234,7 +236,7 @@ Capital you can't inspect is just a bigger database. The `:tree` command in [eff
 
 Each row is a rendering of one node, and the row model is a compact restatement of everything this post has covered:
 
-```ts title="packages/code/src/cli/presentation/contextTreeView.ts"
+```ts title="packages/cli/src/cli/presentation/contextTreeView.ts"
 export interface TreeNodeDisplay {
   kind: 'node'
   label: string            // the spawner-given title, else the folder basename
@@ -252,7 +254,7 @@ export interface TreeNodeDisplay {
 
 Provenance, seed kind, cost, staleness — the receipt fields, on screen. But the view isn't read-only, and that's where it gets good. Press Enter on a node and its full persisted session opens as a preview over the conversation pane: every message replayed, with a marker showing where the seed ends and the node's own run begins. And while that preview is open, the composer routes to *that node* — type a message and it resumes the node in place, through the same machinery as the model's `seedMode: 'resume'`, staleness brief included, with a fresh token budget since the human is now the root of the spend. That's the highlighted field above: `active` means "where a typed message goes," and only one row can claim it.
 
-Two more keys complete the verb set. `c` on a node forks its entire context into a brand-new conversation and makes it the active session — the human-driven counterpart of `branch`, for when a sub-agent's investigation turns out to be the real work and you want to take over exactly where it stopped. `d` drops a node and its descendants, for the trees that turned out to be weeds. A second view, `:sessions`, lists every conversation on the workspace so you can hop between the trees themselves.
+Two more keys complete the verb set. `c` on a node forks its entire context into a brand-new conversation and makes it the active session — the human-driven counterpart of `branch`, for when a sub-agent's investigation turns out to be the real work and you want to take over exactly where it stopped. `d` drops a node and its descendants, for the trees that turned out to be weeds. A second view, `:browse`, lists every conversation on the workspace so you can hop between the trees themselves.
 
 The symmetry is the design: **the human gets the same verbs over the same capital as the model.** Resume in place, fork and redirect, inspect the receipt. A sub-agent's context isn't an implementation detail of one tool call anymore; it's a first-class object either kind of operator can pick up later.
 

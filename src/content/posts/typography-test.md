@@ -24,9 +24,9 @@ That's as deep as the scale goes; if a post needs h5, the post is wrong.
 
 Unordered, with nesting:
 
-- Ports stay in `core`, adapters wrap one SDK each
+- Ports stay in `sdk-core`, adapters wrap one SDK each
 - Layers compose at the edge
-  - `cli` → `adapters` → `core`, strictly inward
+  - `cli` → `sdk-adapters` → `sdk-core`, strictly inward
   - nothing imports back out
 - Every error is tagged
 
@@ -44,7 +44,7 @@ Ordered:
 
 A TypeScript block with a title, a highlighted line, and a long line to force horizontal scroll:
 
-```ts title="packages/core/src/usecases/agentLoop.ts"
+```ts title="packages/sdk-core/src/usecases/agentLoop.ts"
 export const agentLoop = Effect.gen(function* () {
   const model = yield* LanguageModelPort
   const store = yield* ConversationStore

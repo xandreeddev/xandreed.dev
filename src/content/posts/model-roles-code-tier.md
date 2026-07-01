@@ -1,7 +1,7 @@
 ---
 title: "The model role, not the model id — and why 'code' earns its own tier"
 description: 'Agents should declare a job, not a model. Three roles — general, code, fast — resolved once per run, and why coding got pulled onto its own tier.'
-pubDate: 2026-07-31
+pubDate: 2026-09-08
 tags: [ai, agents, effect]
 series:
   name: 'Building a coding agent'
@@ -38,11 +38,11 @@ export const modelForRole = (settings: RoleModelSettings, role: ModelRole): stri
 
 Three jobs, one breath each. **general** is the default brain: the root conversation, and the sub-agents doing research, analysis, and planning. **code** is the same agentic loop narrowed to one job — sub-agents that *write* code — so a model tuned for editing can sit behind the diffs while reasoning stays on `general`. **fast** is the helper tier: the latency-sensitive and background one-shot calls (digests, the approval judge, session titles) that a [separate post](https://github.com/xandreeddev/efferent) maps in full.
 
-The highlighted line is the design, not the `switch`. A role is defined by *what the call is for*, and it resolves to a model the user chose — never the other way around. Nothing in the agent loop, no tool handler, no sub-agent spawn ever names a model id. It names a job; `modelForRole` turns the job into a model; the user owns the mapping with three settings (`:set codeModel …`, `:set fastModel …`, and the live `:model` picker for `general`). The day a better coding model ships, that's one setting, not a grep through call sites for a hardcoded id.
+The highlighted line is the design, not the `switch`. A role is defined by *what the call is for*, and it resolves to a model the user chose — never the other way around. Nothing in the agent loop, no tool handler, no sub-agent spawn ever names a model id. It names a job; `modelForRole` turns the job into a model; the user owns the mapping (the live `:model` picker per role — `:model` for general, `:model code` / `:model fast` for the other two — or `:set codeModel|fastModel` directly). The day a better coding model ships, that's one setting, not a grep through call sites for a hardcoded id.
 
 ## Code is a role the model asks for
 
-The split only pays off if *something* decides, per piece of work, whether it's reasoning or editing — and that decision lives where the work is delegated. efferent fans work out to sub-agents with one generic `run_agent` tool, and the role is a parameter the orchestrator fills in:
+The split only pays off if *something* decides, per piece of work, whether it's reasoning or editing — and that decision lives where the work is delegated. efferent fans work out to sub-agents with one generic `run_agent` tool, and the role is a parameter the delegating agent fills in:
 
 ```ts
 run_agent({
@@ -52,7 +52,9 @@ run_agent({
 })
 ```
 
-The tool description is blunt about the rule, because the description is the policy that runs on every turn: *set `role` to `"code"` when the sub-agent will write code, `"general"` (the default) for research, analysis, or planning — it is **never** a specific model.* That last clause is load-bearing. The orchestrating model is good at classifying *its own* intent ("am I about to investigate, or about to edit?") and bad at — and shouldn't be trusted with — choosing a model id. So the interface only lets it express the job. Which model that job runs on was decided once, by a human, in settings.
+The tool description is blunt about the rule, because the description is the policy that runs on every turn: *`"code"` for writing code (the dedicated coding model), `"general"` for research, analysis, planning, or orchestration — NOT a specific model; the human configures which model backs each tier.* That last clause is load-bearing. The delegating model is good at classifying *its own* intent ("am I about to investigate, or about to edit?") and bad at — and shouldn't be trusted with — choosing a model id. So the interface only lets it express the job. Which model that job runs on was decided once, by a human, in settings.
+
+One escalation since this was drafted: in the full fleet, the *root* doesn't even get the parameter. Its own `run_agent` is hard-railed to delegating whole objectives to a coordinator — the schema has no `role` field at all — and the coordinator picks tiers when it staffs its specialists. Same principle, one level stricter: each agent expresses only the decision that's genuinely its to make, and "which tier does this worker run on" belongs to the lead standing next to the work, not to the top of the tree.
 
 ## Resolve once, freeze for the run
 
@@ -71,7 +73,7 @@ Effect.locally(RunContextRef, {
 
 `RunContextRef` is a `FiberRef` — fiber-scoped ambient state that every child fiber inherits a copy of (the concurrency toolkit behind it is [its own post](/posts/effect-semantics-layers-concurrency/)). Pinning the three models into it at run start means the entire sub-agent tree, however deep it fans out, reads the *same* frozen mapping. A `code` spawn five levels down resolves to whatever `codeModel` was when its top-level turn began — not whatever it is now. Liveness at the session boundary, stability within a run: the `FiberRef` is exactly the seam that lets those two coexist without a flag.
 
-Note the fallback riding through every field: `?? settings.model`. An unset `codeModel` resolves to `general`, so the `code` role *works on day one* — every coding sub-agent just runs on your main model until you decide a dedicated code model is worth configuring. The capability ships before the configuration does; you opt into the second model when you have a reason, and `code` quietly upgrades the moment you do. (`codeModelDistinct(settings)` is the predicate the UI uses to show whether a *separate* code model is actually in play, or whether `code` is currently just `general` wearing a different label.)
+Note the fallback riding through every field: `?? settings.model`. An unset `codeModel` resolves to `general`, so the `code` role *works on day one* — every coding sub-agent just runs on your main model until you decide a dedicated code model is worth configuring. The capability ships before the configuration does; you opt into the second model when you have a reason, and `code` quietly upgrades the moment you do. (`codeModelDistinct(settings)` is the predicate behind that: when no distinct code model is configured, the root's prompt doesn't even advertise code-tier delegation — routing an edit to a `code` sub-agent that resolves to the same model is pure overhead, so the fast path is to just make the edit. The status bar tells the same story: all three roles with their resolved model ids, the unconfigured followers dimmed.)
 
 ## We didn't guess that code wanted its own tier
 

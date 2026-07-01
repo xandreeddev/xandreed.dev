@@ -39,7 +39,7 @@ That's the whole thesis. Everything below is what it takes to hold onto it in a 
 
 Here's the renderer's whole lifecycle in [efferent](https://github.com/xandreeddev/efferent), wrapped so the terminal is restored on success, failure, *and* interruption:
 
-```ts title="packages/code/src/cli/runtime.ts"
+```ts title="packages/cli/src/cli/runtime.ts"
 const renderer = yield* Effect.acquireRelease(
   Effect.promise(() =>
     createCliRenderer({
@@ -65,7 +65,7 @@ This file is also where the architecture announces itself. Three runtimes meet i
 
 The agent loop knows nothing about terminals. What it has is **hooks** — callbacks it invokes at lifecycle points — and the CLI's entire production of UI events is one function that turns each hook into a `Queue.offer`:
 
-```ts title="packages/code/src/events.ts"
+```ts title="packages/cli/src/events.ts"
 export type AgentEvent =
   | { type: 'flush' } // drain sentinel — see below // [!code highlight]
   | { type: 'turn_start'; turnIndex: number }
@@ -91,7 +91,7 @@ This vocabulary is mode-agnostic on purpose: the TUI, the one-shot print mode, t
 
 The queue itself is `Queue.unbounded<AgentEvent>` — deliberately. A bounded queue would mean a slow paint could apply backpressure to an agent turn, and "the UI stalls the model" is exactly the inversion this design exists to forbid. On the other side, a single consumer fiber drains it:
 
-```ts title="packages/code/src/cli/events/eventPump.ts"
+```ts title="packages/cli/src/cli/events/eventPump.ts"
 export const runEventPump = (
   queue: Queue.Queue<AgentEvent>,
   reduce: (event: AgentEvent) => void,
@@ -109,7 +109,7 @@ Eleven lines, and it's the *entire* Effect→Solid crossing. `batch` is Solid's 
 
 `createTuiStore` composes five concern-scoped slices — conversation, side pane, session, ui, overlay — into one flat object the views read directly. Each slice is the same pattern: signals plus intention-revealing setters. The conversation slice is the busiest:
 
-```ts title="packages/code/src/cli/state/conversation.ts"
+```ts title="packages/cli/src/cli/state/conversation.ts"
 const [blocks, setBlocks] = createSignal<ScrollbackBlock[]>([])
 const [nodePreview, setNodePreview] = createSignal<NodePreview | null>(null)
 // Imperative renderer handles live OUTSIDE the signal graph, in plain slots.
@@ -137,7 +137,7 @@ Here is the layering discipline that the directory tree enforces: `presentation/
 
 The cleanest specimen is the agent's live state machine — *what is the agent doing right now*, derived from the same event stream everything else reads:
 
-```ts title="packages/code/src/cli/presentation/agentState.ts"
+```ts title="packages/cli/src/cli/presentation/agentState.ts"
 export type AgentPhase = 'idle' | 'thinking' | 'tool'
 
 export interface AgentState {
@@ -175,7 +175,7 @@ The same layer owns the heaviest lift in the TUI: `historyProjection` derives ra
 
 The TUI is **modal**, in the vim sense: the composer is INSERT, the two read-only panes are NORMAL, and what a key means depends on where you are. The tempting implementation — listeners sprinkled across components — makes precedence emergent and unreproducible. Instead there's exactly one keyboard subscription, in the root component, and it calls a dispatcher whose ordering *is* the policy:
 
-```ts title="packages/code/src/cli/keys/dispatch.ts"
+```ts title="packages/cli/src/cli/keys/dispatch.ts"
 export const dispatch = (ctx: TuiContext, key: Key): void => {
   if (overlayKey(ctx, key)) return // a modal owns ALL input while open // [!code highlight]
   if (key.ctrl && key.shift && key.name === 'c') { ctx.copySelection(); return }
@@ -196,9 +196,9 @@ The NORMAL-mode vocabulary is vim's, adapted to fold-structured content: `j/k` s
 
 ## view/: components that run once
 
-After all that, the view layer has remarkably little to do — which is the point. Of the ~110 files in the TUI, only 25 are `.tsx`; they paint store state and forward intent, nothing else. The header is representative — the agent's face, rendering the state machine from two sections ago:
+After all that, the view layer has remarkably little to do — which is the point. Of the ~140 files in the TUI, only 35 are `.tsx`; they paint store state and forward intent, nothing else. The header is representative — the agent's face, rendering the state machine from two sections ago:
 
-```tsx title="packages/code/src/cli/view/chrome/Header.tsx"
+```tsx title="packages/cli/src/cli/view/chrome/Header.tsx"
 export const Header = (props: { ctx: TuiContext }) => {
   const { store } = props.ctx
   const st = () => store.agentState()
@@ -229,11 +229,11 @@ The same thin-view discipline runs through the side pane's Activity view: a cont
 
 ## Overlays: the moment the UI blocks the agent
 
-Modals are one discriminated signal, not a stack of booleans: `Overlay` is `none | select | login | settings | approval`, and `overlayKey` — the first line of the dispatcher — owns all input while one is open. The generic `select` member covers the `:model`, `:effort`, `:search`, `:theme`, and resume pickers with shared move/filter/submit plumbing; a `purpose` tag re-narrows the erased value type at the submit boundary, so adding a picker is one tag plus one switch branch.
+Modals are one discriminated signal, not a stack of booleans: `Overlay` is `none | select | login | settings | approval` (a few members have joined since — `resume`, `onboarding`, `shortcuts`), and `overlayKey` — the first line of the dispatcher — owns all input while one is open. The generic `select` member covers the `:model`, `:effort`, `:search`, and `:theme` pickers with shared move/filter/submit plumbing; a `purpose` tag re-narrows the erased value type at the submit boundary, so adding a picker is one tag plus one switch branch.
 
 The approval modal is the interesting one, because it inverts the usual direction: the *agent fiber* asks the *UI* a question. When a bash command needs human sign-off (after the rule ledgers and the fast-tier judge have had their chance to settle it silently — that judge is a story of its own), the requesting fiber suspends inside an `Effect.async` whose resume callback is stashed where the key handler can reach it; opening the modal is just one more `setOverlay`. The fiber sleeps until a keystroke answers, and if the human interrupts the whole turn instead, the async's cleanup closes the modal so nothing dangles. The Effect-side mechanics of parking fibers on humans deserve — and have — a post of their own; what matters *here* is that from the UI's perspective an approval is an ordinary overlay with an ordinary key handler:
 
-```ts title="packages/code/src/cli/keys/overlay.ts"
+```ts title="packages/cli/src/cli/keys/overlay.ts"
 if (o.kind === 'approval') {
   // choose mode: three of the four answers create a standing rule.
   if (key.name === 'escape' || (key.ctrl && key.name === 'c')) {
@@ -256,7 +256,7 @@ A conversation rail full of raw strings would waste the medium. The pipeline tha
 
 **Prose is markdown, natively.** Assistant text renders through OpenTUI's `<markdown>` renderable — `marked` parses it, and each token is styled by scope lookup, so headings, bold, lists, inline code and links arrive styled instead of as literal `**` and backticks. **Code is tree-sitter.** Fenced blocks inside that markdown, and the hunk contents of diffs, are highlighted by a shared tree-sitter client — a real incremental parser running in a worker, the same parsing technology editors use, not a pile of regexes. Both families share one style table, built from the active theme's semantic tokens:
 
-```ts title="packages/code/src/cli/view/syntax.ts"
+```ts title="packages/cli/src/cli/view/syntax.ts"
 const styleCache = new Map<string, SyntaxStyle>()
 
 export const syntaxStyle = (): SyntaxStyle => {
@@ -286,7 +286,7 @@ export const syntaxStyle = (): SyntaxStyle => {
 
 The design system is two tiers. A small palette names raw colours; a `Tokens` record names every *visual role* the views are allowed to paint with — and views reference roles, never hexes:
 
-```ts title="packages/code/src/cli/presentation/theme/tokens.ts"
+```ts title="packages/cli/src/cli/presentation/theme/tokens.ts"
 export interface Tokens {
   accent: Record<'conversation' | 'side' | 'input', string> // per-pane focus accents
   text: { default: string; user: string; assistant: string; heading: string; muted: string; dim: string }
@@ -300,7 +300,7 @@ export interface Tokens {
 
 A **theme** is one complete set of values for those fixed names — [efferent](https://github.com/xandreeddev/efferent) ships three: `efferent` (the default — warm near-black with an ember/verdigris/chartreuse triad), `one-dark`, and `tokyo-night`. The token *shape* is the stable interface; a theme is just data satisfying it. Which leaves one problem: `presentation/` is pure and static, so its `tokens` is a module constant — how does `:theme` switch live? With the smallest possible amount of magic:
 
-```ts title="packages/code/src/cli/state/theme.ts"
+```ts title="packages/cli/src/cli/state/theme.ts"
 const [activeTheme, setActiveTheme] = createSignal<Theme>(defaultTheme)
 
 export const setTheme = (name: string): boolean => {
@@ -328,7 +328,7 @@ The honest ledger, because this stack is not free.
 
 **You can't unit-test feel.** The split helps enormously — seventeen tested presentation modules carry the logic, and the view layer gets smoke coverage through OpenTUI's headless test renderer, which boots the real pipeline (Solid transform, reconciler, native FFI layout and draw) into a memory buffer and lets tests assert on the frame as text:
 
-```ts title="packages/code/src/cli/view/smoke.test.ts"
+```ts title="packages/cli/src/cli/view/smoke.test.ts"
 test('OpenTUI + Solid render a bordered box with text', async () => {
   const { waitForFrame, renderer } = await testRender(SmokeApp, { width: 40, height: 8 })
   try {

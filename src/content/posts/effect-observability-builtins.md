@@ -1,7 +1,7 @@
 ---
 title: 'Observability is built in; where it goes is a layer'
 description: 'Spans, metrics, and logs are Effect built-ins, not a vendor SDK you thread through your code — and one layer at the edge decides the backend, so telemetry-off costs nothing.'
-pubDate: 2026-07-24
+pubDate: 2026-08-28
 tags: [effect, typescript, observability]
 series:
   name: 'Observing an agent'
@@ -166,7 +166,7 @@ export const OtlpTelemetryLive: Layer.Layer<never> = Layer.unwrapEffect(
 
 And here is the entire on/off switch — a single settings read at the edge that picks the exporter layer or the *empty* one:
 
-```ts title="packages/code/src/main.ts"
+```ts title="packages/cli/src/main.ts"
 const TelemetryLive: Layer.Layer<never> = Layer.unwrapEffect(
   Effect.gen(function* () {
     const settings = yield* (yield* SettingsStore).load(process.cwd(), homedir())

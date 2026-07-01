@@ -1,7 +1,7 @@
 ---
 title: 'The context window is a resource you engineer, not a buffer you fill'
 description: 'What lives in an agent context window, and the lifecycle — admit, clip, fold, curate — that keeps it working.'
-pubDate: 2026-06-29
+pubDate: 2026-07-14
 tags: [agents, ai, effect]
 series:
   name: 'How an agent remembers'
@@ -34,9 +34,9 @@ The first lifecycle stage happens before the conversation even starts: deciding 
 
 A *skill* is a reusable procedure written as a markdown file — "how we do database migrations here", "the release checklist" — with a name and a one-line description in its frontmatter. The tempting design is to inject every skill wholesale into the system prompt: the model would always know everything. It would also pay for everything, every turn, whether or not any of it applies.
 
-So only the index is admitted. At startup, skills are discovered by walking `cwd → parent directories → ~/.efferent/skills/` (closer files shadow farther ones on name collisions), and the prompt gets one line per skill:
+So only the index is admitted. At startup, skills are discovered by walking the `.efferent/skills/` directories from `cwd` up through its parents, then `~/.efferent/skills/` (closer files shadow farther ones on name collisions), and the prompt gets one line per skill:
 
-```ts title="packages/code/src/prompts/coder.ts"
+```ts title="packages/cli/src/prompts/coder.ts"
 const renderSkillsSection = (skills: ReadonlyArray<Skill>): string => {
   if (skills.length === 0) return ''
   const lines = skills.map((s) => `- ${s.name}: ${s.description}`).join('\n') // [!code highlight]
@@ -58,7 +58,7 @@ The bodies stay on disk. The toolkit gains one tool, `read_skill({ name })`, tha
 
 The second admitted artifact is workspace guidance — the `AGENT.md` convention, where a repo carries durable instructions for any agent working in it ("run `bun test`, not `npm test`; never touch `generated/`"). These *do* earn permanent seats: they're rules, and a rule the model can't see is a rule it will break. But the discovery is hierarchical and the budget is explicit:
 
-```ts title="packages/code/src/usecases/discoverInstructionFiles.ts"
+```ts title="packages/cli/src/usecases/discoverInstructionFiles.ts"
 /** Per-file char cap in the rendered prompt. */
 export const MAX_INSTRUCTION_FILE_CHARS = 4_000
 /** Total char budget for the whole '# Instructions' section. */
@@ -166,7 +166,7 @@ The entry point is `:context`, which opens a viewer over the conversation — bu
 
 Then comes the verb. `Space` selects units — individual turns, or a whole handoff — and `b` (the `:build` command) creates a **new conversation seeded with exactly the selected units**, and switches to it:
 
-```ts title="packages/code/src/cli/presentation/contextView.ts"
+```ts title="packages/cli/src/cli/presentation/contextView.ts"
 export const messagesForSelectedTurns = (
   segments: ReadonlyArray<ContextSegment>,
   selected: ReadonlySet<number>,        // turn indices
@@ -197,7 +197,7 @@ One small grace note rides on the same store: each conversation gets a generated
 
 None of the above matters if the user can't see the resource being spent. The lifecycle's quietest component is its instrumentation, and the TUI treats context spend as a first-class number: the status bar reads like `gemini-3.5-pro · ▓▓░░ 12% 18k/1M · 86% cached · sqlite · ~/code/app` — current model, a context gauge with used-over-window, and the share of the last turn's input that was served from the provider's cache. The gauge's color follows one shared scale:
 
-```ts title="packages/code/src/cli/presentation/statusBar.ts"
+```ts title="packages/cli/src/cli/presentation/statusBar.ts"
 export type GaugeSeverity = 'ok' | 'warn' | 'critical'
 
 export const gaugeSeverity = (used: number, total: number): GaugeSeverity => {

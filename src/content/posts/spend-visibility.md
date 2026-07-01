@@ -1,7 +1,7 @@
 ---
 title: 'Make the meter visible: token spend is a UI concern'
 description: 'Token spend measured per call, attributed per role and agent, persisted with the work, shown where decisions happen.'
-pubDate: 2026-07-15
+pubDate: 2026-08-14
 tags: [agents, ux, ai]
 draft: true
 ---
@@ -111,7 +111,7 @@ One pass over history and the meter is exactly where it was: the last turn's inp
 
 And when there's nothing to replay — histories recorded before usage annotation existed — the honest move is an estimate that *admits* it's one:
 
-```ts title="packages/code/src/cli/actions/session.ts"
+```ts title="packages/cli/src/cli/actions/session.ts"
 // History without persisted usage: a 0/1M gauge would claim a resumed
 // session costs nothing on its next turn. Estimate at ~4 chars/token and
 // mark it — the gauge shows `~` until the first real provider count.
@@ -129,7 +129,7 @@ Modern agents don't run one model; they run a *cast*. In [efferent](https://gith
 
 The ledger is almost embarrassingly small. That's the point — attribution is a data shape, not a subsystem:
 
-```ts title="packages/code/src/cli/presentation/sidePane.ts"
+```ts title="packages/cli/src/cli/presentation/sidePane.ts"
 /** Billed tokens (input + output) accumulated per model role this session. */
 export interface RoleSpend {
   readonly general: number  // default agentic work — root loop + reasoning sub-agents
@@ -156,7 +156,7 @@ What keeps the ledger honest is that helper spend is **an event like any other**
 
 The other helpers report through the same bookkeeping at their own call sites. The fast-tier judge that pre-screens bash approvals — its verdict logic is a post of its own — settles up the moment it rules:
 
-```ts title="packages/code/src/cli/approval.ts"
+```ts title="packages/cli/src/cli/approval.ts"
 const outcome = yield* judgeApproval(req, permitted)
 if (outcome.usage !== undefined) {
   const billed = outcome.usage.inputTokens + outcome.usage.outputTokens
@@ -166,7 +166,7 @@ if (outcome.usage !== undefined) {
 
 And the **fast** tier that names a session after its first exchange does the same, with a comment that doubles as the section's thesis: *a session title is real spend — count it.*
 
-The result renders as one line in the activity pane: `Σ general 64k · fast 1k`. Read the small numbers, because they're the argument. That `fast 1k` is a stack of session titles and clip digests you'd never have noticed paying for — and now you don't have to *trust* that they're nearly free, you can *see* it. The line only appears once a non-`general` role has actually spent; a ledger of zeros teaches nothing, so it earns its pixels first.
+The result renders as a one-line ledger: `Σ general 64k · fast 1k`. Read the small numbers, because they're the argument. That `fast 1k` is a stack of session titles and clip digests you'd never have noticed paying for — and now you don't have to *trust* that they're nearly free, you can *see* it. And a ledger of zeros teaches nothing — the line should earn its pixels only once a non-`general` role has actually spent.
 
 ## Attribute by agent: spend as provenance
 
@@ -227,7 +227,8 @@ Here's [efferent](https://github.com/xandreeddev/efferent)'s layout — activity
  │ ● I'll read the test first.             │  │ Σ general 17k · fast 1k │
  │ …                                       │  │ …                       │
  └─────────────────────────────────────────┘  └─────────────────────────┘
-  gemini-3.5-flash · code gemini-3-pro · fast gemini-3.1-flash-lite ░░ 2% 18k/1M · 86% cached · sqlite · ~/proj
+  ? for shortcuts              ░░ 2% 18k/1M · 86% cached · sqlite · ~/proj
+  ● general gemini-3.5-flash   code gemini-3-pro   fast gemini-3.1-flash-lite
 ```
 
 Three numbers, and each one exists to change a specific behavior.
@@ -236,7 +237,7 @@ Three numbers, and each one exists to change a specific behavior.
 
 `ctx ░░ 2% 18k/1M` is the last turn's input tokens over the model's context window. It answers "how much room is left?" — and it escalates, on one scale shared by every surface that draws it:
 
-```ts title="packages/code/src/cli/presentation/statusBar.ts"
+```ts title="packages/cli/src/cli/presentation/statusBar.ts"
 /** How loudly the context gauge should speak. One scale for every surface:
  *  under 70% it's bookkeeping; from 70% a fold is worth planning; from 90%
  *  the next turns may degrade — `:handoff` now. */
@@ -249,7 +250,7 @@ export const gaugeSeverity = (used: number, total: number): GaugeSeverity => {
 }
 ```
 
-At `warn` the bar changes color; at `critical` it grows words — `:handoff to fold` — naming the action that fixes it: fold the loaded history into a summary checkpoint and continue light. (The fold machinery, including the auto-trigger near the window's edge, is a post of its own.) The behavioral shift this produces is real: users stop being *surprised* by degraded late-session turns and start folding *before* quality drops, because the gauge made "context is a budget" something you watch rather than something you learn about from a bad answer.
+At `warn` the bar changes color; at `critical` it grows a word — `:handoff` — naming the action that fixes it: fold the loaded history into a summary checkpoint and continue light. (The fold machinery, including the auto-trigger near the window's edge, is a post of its own.) The behavioral shift this produces is real: users stop being *surprised* by degraded late-session turns and start folding *before* quality drops, because the gauge made "context is a budget" something you watch rather than something you learn about from a bad answer.
 
 ### The role ledger: when to delegate
 
@@ -259,7 +260,7 @@ At `warn` the bar changes color; at `critical` it grows words — `:handoff to f
 
 `86% cached` is the share of the last turn's input served from the provider's prompt cache:
 
-```ts title="packages/code/src/cli/presentation/statusBar.ts"
+```ts title="packages/cli/src/cli/presentation/statusBar.ts"
 /** The share of the last turn's context served from the provider's cache —
  *  the caching story in one number. Undefined until a turn reports real usage. */
 export const cachePercent = (cacheRead: number, input: number): number | undefined =>
@@ -270,26 +271,34 @@ Cache reads are billed at a fraction of full input price, so on long sessions th
 
 ## Budgets close the loop
 
-Visibility tells you; budgets stop you. The two are complements, not substitutes — a meter can't prevent a runaway fan-out at 2 a.m., and a hard cap with no meter just fails mysteriously. In [efferent](https://github.com/xandreeddev/efferent), all sub-agents spawned within one top-level turn drain a shared token pool (1M by default), and the same `drainPool` you saw in the node-tracking hook is what depletes it — measurement and enforcement consume *one* number, extracted once:
+Visibility tells you; budgets stop you. The two are complements, not substitutes — a meter can't prevent a runaway fan-out at 2 a.m., and a hard cap with no meter just fails mysteriously. In [efferent](https://github.com/xandreeddev/efferent), all sub-agents spawned within one top-level turn drain a shared token pool (4M by default), and the same `drainPool` you saw in the node-tracking hook is what depletes it — measurement and enforcement consume *one* number, extracted once:
 
 ```ts title="packages/sdk-core/src/usecases/tokenBudget.ts"
-/** Tokens a single LLM call costs the pool: what the provider bills. */
-export const usageCost = (u: ContextUsage): number => u.inputTokens + u.outputTokens
+/** Tokens a single LLM call costs the pool — what the provider ACTUALLY bills.
+ *  Charging the cached prefix at full price is the bug that drained a
+ *  multi-turn fleet's budget ~8× too fast: every turn re-sends the
+ *  (byte-stable, cached) prefix, and taxing it as fresh spend penalizes
+ *  exactly the prompt-cache design that makes the fleet cheap. */
+export const usageCost = (u: ContextUsage): number => {
+  const cached = Math.min(Math.max(0, u.cacheReadTokens), u.inputTokens)
+  const fresh = u.inputTokens - cached
+  return fresh + cached * CACHE_READ_COST_FACTOR + u.outputTokens // cache reads at ~the provider's 0.1× rate // [!code highlight]
+}
 
 /** The model-facing failure for a spawn attempted on a drained pool. */
 export const budgetExhaustedFailure = {
   error: 'BudgetExhausted',
-  message: 'the sub-agent token budget for this turn is exhausted — do the remaining work yourself instead of spawning.', // [!code highlight]
+  message: 'the sub-agent token budget for this turn is exhausted — stop spawning. Synthesize and return the best result you can from the work already completed, and note in your summary any remaining work so the caller can pick it up in a fresh turn.', // [!code highlight]
 } as const
 ```
 
-Note who the error message addresses: the *model*. A drained pool doesn't kill the turn; it returns a value the model reads and reacts to, so it finishes the remaining work itself instead of spawning. Even enforcement is a kind of display — just pointed at the other intelligence in the loop. The pool's mechanics — how it rides the spawn tree, why it's shared rather than sliced — are a post of their own.
+Note who the error message addresses: the *model*. A drained pool doesn't kill the turn; it returns a value the model reads and reacts to — wrap up, return the best synthesis of what's already in hand, and hand any remainder back to the caller, who can resume with a fresh per-turn budget. Even enforcement is a kind of display — just pointed at the other intelligence in the loop. The pool's mechanics — how it rides the spawn tree, why it's shared rather than sliced — are a post of their own.
 
 ## What the meter doesn't tell you
 
 Honest limits, because a post selling visibility shouldn't hide its own blind spots.
 
-**Tokens, not dollars.** Everything above is denominated in tokens, and that's deliberate — there isn't a price table anywhere in the repo. Provider price tables drift monthly; input and output are priced differently; cache reads are discounted by provider-specific factors; and subscription OAuth (a post of its own) has no marginal dollar price at all — a "cost" display for a flat-rate plan would be fiction. A wrong dollar figure is worse than a right token count. But the cost is real: a newcomer can't convert tokens to money without leaving the app, and a single billed sum (`input + output`) flattens the very asymmetries — output costing several times input, cache reads costing a fraction — that the per-field data could expose. Tokens are the honest unit; they are not the *complete* unit.
+**Tokens, not dollars — in the meter.** Every live surface above is denominated in tokens, and that's deliberate. The repo does carry a pricing catalogue now — a generated per-model rate snapshot that prices telemetry spans and eval scorecards, and returns *nothing* for a model it doesn't know rather than a wrong number — but the meter itself doesn't convert. Provider price tables drift monthly; input and output are priced differently; cache reads are discounted by provider-specific factors; and subscription OAuth (a post of its own) has no marginal dollar price at all — a "cost" display for a flat-rate plan would be fiction. A wrong dollar figure is worse than a right token count. But the cost is real: a newcomer can't convert tokens to money without leaving the app, and a single billed sum (`input + output`) flattens the very asymmetries — output costing several times input, cache reads costing a fraction — that the per-field data could expose. Tokens are the honest unit; they are not the *complete* unit.
 
 **Normalization is a treadmill.** `extractUsage` is the most provider-soaked function in the codebase, and it will be wrong for some provider that doesn't exist yet — new adapters mean new field names, new finish-part quirks, new cache semantics. Quarantining the mess in one function makes the breakage cheap to fix, not impossible.
 
