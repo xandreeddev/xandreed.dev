@@ -5,7 +5,19 @@ export type Post = CollectionEntry<'posts'>;
 /** Drafts are visible in dev, excluded from prod builds, RSS, and sitemap. */
 export async function getPosts(): Promise<Post[]> {
   const posts = await getCollection('posts', (post) => import.meta.env.DEV || !post.data.draft);
+  if (import.meta.env.PROD) assertNoFutureLivePosts(posts);
   return posts.sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+}
+
+/** Fail a prod build on a future-dated non-draft post. There is no scheduling —
+ * push = publish — so a future pubDate on a live post is a mistake, not a queue. */
+export function assertNoFutureLivePosts(posts: Post[]): void {
+  const now = Date.now();
+  const future = posts.filter((p) => !p.data.draft && p.data.pubDate.valueOf() > now);
+  if (future.length > 0) {
+    const list = future.map((p) => `${p.id} (${isoDate(p.data.pubDate)})`).join(', ');
+    throw new Error(`Non-draft post(s) dated in the future: ${list} — mark draft: true or fix pubDate.`);
+  }
 }
 
 /** Draft posts only — served unlisted + noindexed under /drafts in prod. */
