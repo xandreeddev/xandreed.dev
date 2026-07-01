@@ -11,3 +11,8 @@ dist/
 /PROMPT.md
 .serena/
 .efferent/
+
+# staged assets for a possible future world — not referenced by any code yet
+/public/models/rogue.glb
+/public/models/nature/
+/public/models/LICENSE.txt
