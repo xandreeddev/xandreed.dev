@@ -3,7 +3,7 @@ import { render } from 'astro:content';
 import Base from '../../layouts/Base.astro';
 import Toc from '../../components/Toc.astro';
 import SeriesBanner from '../../components/SeriesBanner.astro';
-import { getPosts, getAllPosts, isoDate, readingTime, seriesSlug, toSeriesParts, type Post, type SeriesPart } from '../../utils/posts';
+import { getPosts, getAllPosts, isoDate, readingTime, seriesSlug as toSeriesSlug, toSeriesParts, type Post, type SeriesPart } from '../../utils/posts';
 
 export async function getStaticPaths() {
   const posts = await getPosts(); // live pages to build
@@ -17,7 +17,7 @@ export async function getStaticPaths() {
         newer: posts[i - 1] ?? null,
         older: posts[i + 1] ?? null,
         seriesName: series?.name ?? null,
-        seriesSlug: series ? seriesSlug(series.name) : null,
+        seriesSlug: series ? toSeriesSlug(series.name) : null,
         seriesParts: series ? toSeriesParts(all, series.name, post.id) : [],
       },
     };
@@ -38,7 +38,13 @@ const { Content, headings } = await render(post);
 const minutes = readingTime(post.body ?? '');
 ---
 
-<Base title={`${post.data.title} — xandreed`} description={post.data.description} ogType="article">
+<Base
+  title={`${post.data.title} — xandreed`}
+  description={post.data.description}
+  ogType="article"
+  publishedTime={post.data.pubDate}
+  articleTags={post.data.tags}
+>
   <div class="container">
     <article class="post-wrap">
       <header class="post-header">

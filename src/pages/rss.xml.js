@@ -10,6 +10,11 @@ export async function GET(context) {
     description:
       'Notes on Effect, AI engineering, agents, and evals — building an open-source coding agent in public.',
     site: context.site,
+    xmlns: { atom: 'http://www.w3.org/2005/Atom' },
+    customData: [
+      '<language>en</language>',
+      `<atom:link href="${new URL('rss.xml', context.site).href}" rel="self" type="application/rss+xml"/>`,
+    ].join(''),
     items: posts.map((post) => ({
       title: post.data.title,
       description: post.data.description,

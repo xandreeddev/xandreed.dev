@@ -10,9 +10,11 @@ permissions:
   pages: write
   id-token: write
 
+# Never cancel an in-flight deployment mid-publish (official starter behavior);
+# queued runs still collapse to the latest.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -23,7 +25,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.0
       - run: bun install --frozen-lockfile
+      - run: bun run check
       - run: bun run build
       - uses: actions/upload-pages-artifact@v3
         with:
