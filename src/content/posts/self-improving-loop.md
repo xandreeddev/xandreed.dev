@@ -13,9 +13,11 @@ Here is a line from `.efferent/CONSTRAINTS.md` that no human wrote:
 
 ```md title=".efferent/CONSTRAINTS.md"
 - [fleet-research-budget] (✓0 ✗0) Right-size the fleet to the task. A recent run
-  over-worked it (12 workers, ~1840k billed tokens). For a question answerable
+  over-worked it (44 workers, ~601k billed tokens). For a question answerable
   from a few sources, use ONE researcher and a couple of search_web calls;
   reserve a multi-agent fleet for genuinely multi-axis or multi-package work.
+  Stop and synthesize as soon as you have a solid sourced answer — more workers
+  and more fetches rarely improve a small answer.
 ```
 
 The runtime wrote it, after a run in which the [fleet](/posts/async-fleet-orchestration/) fanned out absurdly wide for a small question — the worst case on record burned 69 `web_fetch` calls on a two-item answer. That runaway got attacked from two sides: a hard per-worker fetch budget, and this learned constraint, which every run since auto-loads into the system prompt under a `# Constraints` heading. The same task now lands in well under half the fetches, and delivers.
@@ -118,7 +120,7 @@ The takeaway isn't "structured output is bad." It's that on a subprocess boundar
 
 Accepted candidates go to `persistArtifact()`, and this is the stage where the design refuses the most tempting shortcut. The obvious move — hand the library file and the new lesson to an LLM, ask for the merged file — is the one ACE measured as harmful. Ask a model to fold a context into itself and it *compresses*: their example collapsed an 18,282-token context at 66.7% accuracy into 122 tokens at 57.1% in a single rewrite. They call it context collapse. It's also a prompt-cache disaster — a wholesale rewrite invalidates the prefix on every run.
 
-So the Curator is plain code, and every learning is a **delta item** with a stable id. A constraint is one bullet in `.efferent/CONSTRAINTS.md`; the merge is `findIndex` and a splice:
+So the Curator is plain code, and every learning is a **delta item** with a stable id. A constraint is one bullet in `.efferent/CONSTRAINTS.md`; the merge is `findIndex` and a one-line replace:
 
 ```ts title="packages/sdk-core/src/usecases/persistArtifact.ts"
 const idx = lines.findIndex((l) => l.includes(`[${id}]`))
@@ -144,7 +146,7 @@ The second is the **deterministic efficiency gate** (`packages/sdk-core/src/usec
 
 For a while, the loop's deliverable-checking half was a tool. The coordinator's toolkit had `verify_with_gate` and `note_constraint`, and its prompt ended with a VALIDATE → LEARN → RETRY phase — please call the gate before you deliver. Which means the gate ran exactly when a model felt like remembering it.
 
-Those tools are gone — defs and handlers deleted. Gating is now **structural** at both orchestrator tiers: the root's `driveLoop` runs it over the whole run, and every coordinator's subtree passes through it before that coordinator returns, both through one shared decision function:
+Those tools are gone — defs and handlers deleted. Gating is now **structural**, at exactly one tier: the root's `driveLoop` runs it over the whole run's aggregate deliverable, through one shared decision function. (A per-coordinator second tier existed briefly and died on run forensics — its Opus subprocess ran inside the sub-agent stall watchdog's no-progress window, so finished leads were killed mid-gate and their completed, test-green work recorded as stalled.)
 
 ```ts title="packages/sdk-core/src/usecases/gateLoop.ts"
 export type GateStep =
@@ -154,9 +156,9 @@ export type GateStep =
   | { kind: 'retry';  event: AgentGateEvent; feedback: AgentMessage }
 ```
 
-Each tier waits for the run's fresh sub-agent nodes to settle, then `gateOnce` unions their `filesChanged` and asks the Verifier's deliverable gate for a verdict. `sound` accepts. `needs_work` under the attempt cap (default 3) first *distills* — the failed attempt is mined for lessons while it's fresh — then retries with the verifier's concrete reasons injected as the next turn, so the swarm fixes named problems instead of re-rolling the dice. A broken gate emits a loud `unavailable` event and proceeds: never a silent pass, never an infinite loop. There is no tool to call and no tool to forget. The prompt can't opt out of the referee any more than your code can opt out of the type checker.
+The loop waits for the run's fresh sub-agent nodes to settle, then `gateOnce` unions their `filesChanged` and asks the Verifier's deliverable gate for a verdict. `sound` accepts. `needs_work` under the attempt cap (default 3) retries with the verifier's concrete reasons injected as the next turn, so the swarm fixes named problems instead of re-rolling the dice — and learning stays *out* of the gate: an earlier cut distilled on every failed attempt, which mined the same conversation twice; the turn-boundary distill is the one distillation a run gets. A broken gate emits a loud `unavailable` event and proceeds: never a silent pass, never an infinite loop. There is no tool to call and no tool to forget. The prompt can't opt out of the referee any more than your code can opt out of the type checker.
 
-One verdict, though, was being over-enforced, and the fix is the most recent commit as I write this. A research run's deliverable is prose — no files changed. The gate used to treat a `needs_work` on prose like a red typecheck: re-run the entire fleet with the reviewer's notes, three times, then give up — the user watched their answer die in review. But a reviewer's `needs_work` on a *report* is an opinion, not a build failure; there's no compile error to fix, only judgment to disagree with. Now a deliverable that changed no files stops with an `advisory` flag and ships *with* the reviewer's notes — the TUI renders it as `⚑ verifier notes (delivered)` instead of a red failure. Fail-closed stays reserved for code, which genuinely either builds or doesn't.
+One verdict, though, was being over-enforced, and the fix is only days old as I write this. A research run's deliverable is prose — no files changed. The gate used to treat a `needs_work` on prose like a red typecheck: re-run the entire fleet with the reviewer's notes, three times, then give up — the user watched their answer die in review. But a reviewer's `needs_work` on a *report* is an opinion, not a build failure; there's no compile error to fix, only judgment to disagree with. Now a deliverable that changed no files stops with an `advisory` flag and ships *with* the reviewer's notes — the TUI renders it as `⚑ verifier notes (delivered)` instead of a red failure. Fail-closed stays reserved for code, which genuinely either builds or doesn't.
 
 ## Mining the backlog
 
