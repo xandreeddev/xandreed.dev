@@ -1241,28 +1241,34 @@ export function mount() {
     const q = new THREE.Quaternion();
     const sc = new THREE.Vector3();
     const cv = new THREE.Color();
+    /* seeded like the billboards/rocks — trees are colliders, so a layout
+       that shifts per reload also shifts collision under a parked car */
     let placed = 0;
     let guard = 0;
     while (placed < N && guard++ < 4000) {
-      const a = Math.random() * Math.PI * 2;
-      const r = LAKE_R + 14 + Math.random() * 380;
+      const a = hash01(`ta${guard}`) * Math.PI * 2;
+      const r = LAKE_R + 14 + hash01(`tr${guard}`) * 380;
       if (Math.abs(r - ROAD_R) < ROAD_W + 6) continue;
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r;
-      const s = 0.75 + Math.random() * 1.5;
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.random() * Math.PI);
+      const s = 0.75 + hash01(`ts${guard}`) * 1.5;
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), hash01(`ty${guard}`) * Math.PI);
       sc.set(s, s, s);
       m4.compose(new THREE.Vector3(x, 1.2 * s, z), q, sc);
       trunks.setMatrixAt(placed, m4);
       m4.compose(new THREE.Vector3(x, (2.4 + 1.5) * s, z), q, sc);
       canopies.setMatrixAt(placed, m4);
       /* night autumn: most trees deep teal, every third one pink/magenta */
-      if (placed % 3 === 0) cv.setHSL(0.83 + Math.random() * 0.1, 0.5, 0.2 + Math.random() * 0.1);
-      else cv.setHSL(0.42 + Math.random() * 0.12, 0.45, 0.14 + Math.random() * 0.09);
+      if (placed % 3 === 0) cv.setHSL(0.83 + hash01(`th${guard}`) * 0.1, 0.5, 0.2 + hash01(`tl${guard}`) * 0.1);
+      else cv.setHSL(0.42 + hash01(`th${guard}`) * 0.12, 0.45, 0.14 + hash01(`tl${guard}`) * 0.09);
       canopies.setColorAt(placed, cv);
       if (r < 420) colliders.push({ x, z, r: 1.4 * s });
       placed++;
     }
+    /* if the guard ever exhausts first, unwritten slots must not render —
+       an unset instance sits at the origin, mid-lake */
+    trunks.count = placed;
+    canopies.count = placed;
     scene.add(trunks, canopies);
   }
 
@@ -1764,13 +1770,16 @@ export function mount() {
   {
     let placed = false;
     const saved = store.carState();
-    if (saved && Array.isArray(saved.p) && Date.now() - (saved.t ?? 0) < 45 * 60 * 1000) {
+    /* validate field-by-field — NaN in a cannon body position poisons the
+       whole physics step, not just the car */
+    const finiteArr = (a, n) => Array.isArray(a) && a.length === n && a.every(Number.isFinite);
+    if (saved && finiteArr(saved.p, 3) && Date.now() - (saved.t ?? 0) < 45 * 60 * 1000) {
       try {
         chassisBody.position.set(saved.p[0], Math.max(saved.p[1] + VIS_OFF, VIS_OFF + 0.2), saved.p[2]);
-        if (Array.isArray(saved.q)) chassisBody.quaternion.set(...saved.q);
-        else chassisBody.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), saved.a ?? 0);
-        chassisBody.velocity.set(...(saved.v ?? [0, 0, 0]));
-        carA = saved.a ?? 0;
+        if (finiteArr(saved.q, 4)) chassisBody.quaternion.set(...saved.q);
+        else chassisBody.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), Number.isFinite(saved.a) ? saved.a : 0);
+        chassisBody.velocity.set(...(finiteArr(saved.v, 3) ? saved.v : [0, 0, 0]));
+        carA = Number.isFinite(saved.a) ? saved.a : 0;
         placed = true;
       } catch {}
     }
@@ -2130,7 +2139,9 @@ export function mount() {
       overlayGone = true;
       overlay?.classList.add('hidden');
     };
-    setTimeout(dismissOverlay, 6000);
+    setTimeout(() => {
+      if (!signal.aborted) dismissOverlay();
+    }, 6000);
 
     const kset = (k, v) => {
       if (['w', 'W', 'ArrowUp'].includes(k)) keys.gas = v;

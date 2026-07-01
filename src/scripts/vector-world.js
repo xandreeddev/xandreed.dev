@@ -2200,16 +2200,26 @@ export function mount() {
        else spawn in orbit of the planet you just read; else at the gate */
     const saved = store.shipState();
     let placed = false;
-    if (saved && Array.isArray(saved.p) && Date.now() - (saved.t ?? 0) < 45 * 60 * 1000) {
+    /* validate the blob field-by-field — a stale cross-deploy shape would
+       otherwise feed NaN straight into position/velocity via fromArray */
+    const num = (v, d) => (Number.isFinite(v) ? v : d);
+    const finiteArr = (a, n) => Array.isArray(a) && a.length === n && a.every(Number.isFinite);
+    if (
+      saved &&
+      finiteArr(saved.p, 3) &&
+      finiteArr(saved.q, 4) &&
+      finiteArr(saved.v, 3) &&
+      Date.now() - (saved.t ?? 0) < 45 * 60 * 1000
+    ) {
       try {
         ship.position.fromArray(saved.p);
-        ship.quaternion.fromArray(saved.q);
+        ship.quaternion.fromArray(saved.q).normalize();
         vel.fromArray(saved.v);
-        hp = Math.min(stats.maxHp, saved.hp ?? stats.maxHp);
-        shield = Math.min(stats.shieldMax, saved.shield ?? stats.shieldMax);
-        shieldCharges = Math.min(stats.shieldChargesMax, saved.c ?? stats.shieldChargesMax);
-        fuel = saved.fuel ?? 100;
-        score = saved.score ?? 0;
+        hp = Math.min(stats.maxHp, num(saved.hp, stats.maxHp));
+        shield = Math.min(stats.shieldMax, num(saved.shield, stats.shieldMax));
+        shieldCharges = Math.min(stats.shieldChargesMax, num(saved.c, stats.shieldChargesMax));
+        fuel = num(saved.fuel, 100);
+        score = num(saved.score, 0);
         if (score > best) best = store.best(score);
         placed = true;
       } catch {
@@ -2434,7 +2444,9 @@ export function mount() {
       overlayGone = true;
       overlay?.classList.add('hidden');
     };
-    setTimeout(dismissOverlay, 7000);
+    setTimeout(() => {
+      if (!signal.aborted) dismissOverlay();
+    }, 7000);
 
     let everLocked = false;
     document.addEventListener(

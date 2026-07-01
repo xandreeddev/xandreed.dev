@@ -217,6 +217,11 @@
   gap: 0.5rem;
 }
 
+/* explicit display beats the UA [hidden] rule — every such panel needs this pair */
+.vector-hud .vh-bar-row[hidden] {
+  display: none;
+}
+
 .vector-hud .vh-bar {
   height: 0.55rem;
   border: 1px solid oklch(87% 0.21 155 / 0.45);

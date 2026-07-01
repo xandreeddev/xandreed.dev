@@ -693,7 +693,9 @@ export function mount() {
 
   /* article pages: record the read (this is how talents grow) + way home */
   if (!isWorld) {
-    const slug = location.pathname.match(/^\/(?:posts|drafts)\/([^/]+)\/?$/)?.[1];
+    /* /posts/ only — vector cores and sodium discoveries don't count drafts,
+       so canopy talents shouldn't either */
+    const slug = location.pathname.match(/^\/posts\/([^/]+)\/?$/)?.[1];
     if (slug) {
       try {
         sessionStorage.setItem('canopy-at', slug);
@@ -1326,6 +1328,14 @@ export function mount() {
         z = Math.sin(a) * r;
         if (trailD(x, z) < 2) continue;
         if (hash01(`gk${cand}`) < 0.25 + 0.75 * wnoise(x, z, 7, 'b')) break;
+      }
+      if (cand >= 4000) {
+        /* candidate stream exhausted — synthesize a spot from the slot index
+           so the leftovers don't all stack at (0,0) in the spawn well */
+        const a = hash01(`gfa${i}`) * Math.PI * 2;
+        const r = 6 + hash01(`gfr${i}`) * (HUB_R - 10);
+        x = Math.cos(a) * r;
+        z = Math.sin(a) * r;
       }
       const s = 0.8 + hash01(`gs${cand}`) * 1.2;
       /* root the tuft into the slope, not the horizon */
@@ -2497,7 +2507,7 @@ export function mount() {
     const pz = player.position.z;
     const dx = px - foe.group.position.x;
     const dz = pz - foe.group.position.z;
-    const dist = Math.hypot(dx, dz);
+    const dist = Math.hypot(dx, dz) || 1; /* foe exactly on player → NaN without the guard */
 
     if (foe.boss) {
       updateBoss(foe, dt, dist, dx, dz, samezone);
@@ -2721,10 +2731,13 @@ export function mount() {
   {
     let placed = false;
     const saved = store.playerState();
-    if (saved && Array.isArray(saved.p) && Date.now() - (saved.t ?? 0) < 45 * 60 * 1000) {
+    /* validate field-by-field — a NaN position falls through every ground
+       check and the respawn watchdog forever */
+    const finiteArr = (a, n) => Array.isArray(a) && a.length === n && a.every(Number.isFinite);
+    if (saved && finiteArr(saved.p, 3) && Date.now() - (saved.t ?? 0) < 45 * 60 * 1000) {
       try {
         player.position.fromArray(saved.p);
-        inCourse = saved.c ?? -1;
+        inCourse = Number.isInteger(saved.c) ? saved.c : -1;
         placed = true;
       } catch {}
     }
@@ -2810,11 +2823,14 @@ export function mount() {
       overlay?.classList.add('hidden');
     };
     setTimeout(() => {
+      if (signal.aborted) return;
       const tick = setInterval(() => {
         if (signal.aborted) return clearInterval(tick);
         if (assetsReady) {
           clearInterval(tick);
-          setTimeout(dismissOverlay, 2600);
+          setTimeout(() => {
+            if (!signal.aborted) dismissOverlay();
+          }, 2600);
         }
       }, 250);
     }, 4000);
