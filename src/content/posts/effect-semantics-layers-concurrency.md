@@ -176,7 +176,7 @@ export const ApprovalAllowAllLive = Layer.succeed(
 )
 ```
 
-Just as telling is what *didn't* change: the model layer is the real router hitting real providers, and the filesystem and shell are the real adapters pointed at a disposable temp workspace. The swap is surgical because every seam was already a tag. Unit tests cut deeper — they substitute a scripted `LanguageModel` and run the whole loop against canned responses. Nobody wrote a mocking framework; substitution is what layers *are*. (The eval design itself deserves its own post.)
+Just as telling is what *didn't* change: the model layer is the real router hitting real providers, and the filesystem and shell are the real adapters pointed at a disposable temp workspace. The swap is surgical because every seam was already a tag. Unit tests cut deeper — they substitute a scripted `LanguageModel` and run the whole loop against canned responses. Nobody wrote a mocking framework; substitution is what layers *are*. (The eval design itself has [a post of its own](/posts/colocated-evals/).)
 
 ## Interlude — Scope: resource lifetimes as values
 
@@ -229,7 +229,7 @@ streamText: (options) =>
   ),
 ```
 
-The `Scoped` suffix is the interlude's idea opened around a stream: the provider client built inside lives exactly as long as this one call — released on completion, failure, *or interruption*, with no cleanup code at the call site. "Request-scoped" isn't a comment here; it's the type. (The full argument for runtime provider selection is a post of its own.)
+The `Scoped` suffix is the interlude's idea opened around a stream: the provider client built inside lives exactly as long as this one call — released on completion, failure, *or interruption*, with no cleanup code at the call site. "Request-scoped" isn't a comment here; it's the type. (The full argument for runtime provider selection is [a post of its own](/posts/llm-provider-runtime-selection/).)
 
 ## Act II — the E channel: failures are data
 
@@ -314,7 +314,7 @@ const hooks = makeEventHooks(eventQueue) // every loop hook offers onto the queu
 // …the agent loop runs with these hooks; one consumer fiber drains the queue
 ```
 
-Hooks deep inside the loop — assistant deltas, tool starts, sub-agent spawns — offer events onto the queue from whatever fiber they're on; one consumer fiber drains it into Solid signals. Unbounded is a deliberate choice ratified by the type: rendering must never apply backpressure to an agent turn. (What happens on the other side of that queue — fine-grained SolidJS signals, no React — is a post of its own.)
+Hooks deep inside the loop — assistant deltas, tool starts, sub-agent spawns — offer events onto the queue from whatever fiber they're on; one consumer fiber drains it into Solid signals. Unbounded is a deliberate choice ratified by the type: rendering must never apply backpressure to an agent turn. (What happens on the other side of that queue — fine-grained SolidJS signals, no React — is [a post of its own](/posts/tui-solidjs-no-react/).)
 
 ### Semaphore: mutual exclusion done right
 

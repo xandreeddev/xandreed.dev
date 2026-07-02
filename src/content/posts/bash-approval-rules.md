@@ -23,7 +23,7 @@ An LLM deciding which security prompts you see *should* make you suspicious. The
 
 ## One port, four answers
 
-Everything below hangs off a single service. In ports-and-adapters terms it's a **port**: an interface the core package declares without implementing, so different modes can answer the same question differently. (In Effect, a port is a `Context.Tag` — a type plus a unique identifier, implementation supplied later as a layer. The full Effect tour is a post of its own; that gloss carries you through this one.)
+Everything below hangs off a single service. In ports-and-adapters terms it's a **port**: an interface the core package declares without implementing, so different modes can answer the same question differently. (In Effect, a port is a `Context.Tag` — a type plus a unique identifier, implementation supplied later as a layer. The full Effect tour is [a post of its own](/posts/effect-semantics-layers-concurrency/); that gloss carries you through this one.)
 
 ```ts title="packages/sdk-core/src/ports/Approval.ts"
 export interface ApprovalRequest {
@@ -49,7 +49,7 @@ The highlighted line is the gate's whole UX, compressed. In the TUI, the modal o
 
 Here is the observation the auto mode is built on: most commands an agent runs are ordinary development actions inside folders the human already handed over. Listing, reading, searching, building, testing, version control — inside the project you opened the agent in, every one of those prompts has the same answer, and you know it before you finish reading the command. A gate that asks anyway isn't being careful; it's spending your attention on questions with known answers.
 
-So before any dialog, an unmatched command goes to the **judge**: one completion on the **fast** role — [efferent](https://github.com/xandreeddev/efferent)'s settings name for the model used in latency-sensitive helper calls (point it at something small with `:set fastModel`; unset, it falls back to the general model — the roles ride the runtime provider routing, a post of its own). The judge is asked a single question: *does this command stay inside the permitted folders, doing ordinary development work?* The **permitted folders** are the heart of the design — the working directory you opened the agent in, plus every folder a previous answer has granted. The prompt is short enough to read whole, and it's the best artifact in the feature:
+So before any dialog, an unmatched command goes to the **judge**: one completion on the **fast** role — [efferent](https://github.com/xandreeddev/efferent)'s settings name for the model used in latency-sensitive helper calls (point it at something small with `:set fastModel`; unset, it falls back to the general model — the roles ride the runtime provider routing, [a post of its own](/posts/llm-provider-runtime-selection/)). The judge is asked a single question: *does this command stay inside the permitted folders, doing ordinary development work?* The **permitted folders** are the heart of the design — the working directory you opened the agent in, plus every folder a previous answer has granted. The prompt is short enough to read whole, and it's the best artifact in the feature:
 
 ```ts title="packages/sdk-core/src/usecases/autoApproval.ts"
 export const buildJudgePrompt = (input: {

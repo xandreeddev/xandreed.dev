@@ -111,7 +111,7 @@ That's an **index** in the most literal sense: a list of titles with enough desc
 
 ## The arithmetic that makes lazy non-negotiable
 
-Here's the part that looks like a micro-optimization and isn't. The system prompt is re-sent with **every request** — that's just how chat completions work. Prompt caching discounts the price of those repeated bytes (a post of its own), but it doesn't give you the window space back: every token of system prompt is a token of context the task can't use, on every single turn.
+Here's the part that looks like a micro-optimization and isn't. The system prompt is re-sent with **every request** — that's just how chat completions work. Prompt caching discounts the price of those repeated bytes ([a post of its own](/posts/prompt-caching/)), but it doesn't give you the window space back: every token of system prompt is a token of context the task can't use, on every single turn.
 
 Now run the numbers on the eager design — the one where you'd inline skill bodies into the prompt, which is exactly what "fork the system prompt" does by hand. The trimmed `commit-style` above is one of the smaller skills you'd write; a real migrations runbook or release procedure lands around 2,000 tokens without trying. Ten skills:
 
@@ -121,7 +121,7 @@ lazy:   prompt = base + index (10 lines)        ≈ base + ~400 tokens, every re
         + read_skill('db-migration') if needed  ≈ 2,000 tokens, once, only that session
 ```
 
-Twenty thousand tokens of standing overhead, against a few hundred — and the eager version pays it on a session where you're asking the agent to rename a variable and nothing in the index applies at all. The lazy version pays for exactly the skills a session uses, exactly when it uses them, and the cost lands in conversation history where it belongs instead of in permanent prompt real estate. (How an agent budgets the whole window is a post of its own; this post is about the extension mechanism that respects the budget.)
+Twenty thousand tokens of standing overhead, against a few hundred — and the eager version pays it on a session where you're asking the agent to rename a variable and nothing in the index applies at all. The lazy version pays for exactly the skills a session uses, exactly when it uses them, and the cost lands in conversation history where it belongs instead of in permanent prompt real estate. (How an agent budgets the whole window is [a post of its own](/posts/context-management/); this post is about the extension mechanism that respects the budget.)
 
 The subtler half of the design is *who reads the index*. There's no keyword matcher, no embedding search, no "skill router" model deciding what's relevant. The index sits in front of the same model doing the task, and the model decides relevance the way it decides everything else — by reading. That's the right reader for the job: relevance here is a judgment about the *task*, and the model is the only component holding the task. When the user says "commit this," the model sees `commit-style: … Read this whenever you are about to write or propose a commit message` and the lookup is one obvious step. You get retrieval-flavored behavior with no retrieval infrastructure, because the corpus is small enough to put the entire table of contents in front of the judge.
 
@@ -282,7 +282,7 @@ The mechanism is the easy half. After writing and rewriting [efferent](https://g
 
 The honest section. Markdown-as-plugin has real costs, and most of them are the flip side of its virtues.
 
-**There is no compiler for prose.** When the migration generator gains a flag, every skill mentioning the old invocation is silently wrong. Code that drifts fails a build; a skill that drifts fails a *session*, three weeks later, in a way that looks like the model being dumb. The only mitigations are process ones: review skills in PRs like the code they describe, and treat "the agent followed the skill and it didn't work" as a bug report against the skill. You can go further and eval that the model reads the right skill at the right moment (colocated evals are a post of its own), but nothing structural stops the rot the way a type does.
+**There is no compiler for prose.** When the migration generator gains a flag, every skill mentioning the old invocation is silently wrong. Code that drifts fails a build; a skill that drifts fails a *session*, three weeks later, in a way that looks like the model being dumb. The only mitigations are process ones: review skills in PRs like the code they describe, and treat "the agent followed the skill and it didn't work" as a bug report against the skill. You can go further and eval that the model reads the right skill at the right moment (colocated evals are [a post of their own](/posts/colocated-evals/)), but nothing structural stops the rot the way a type does.
 
 **Shadowing is silent.** First-by-name wins across the search path, and nothing warns on a collision. That's the right default — a project skill *should* beat your personal one without ceremony — but it means a teammate adding `commit-style` to a nested package can quietly disable the repo-root version for anyone working in that folder, and no log line says so.
 

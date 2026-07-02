@@ -235,7 +235,7 @@ Two more moves earn their keep. Identical warnings dedup to one occurrence annot
 
 The marker tells the model how much it's missing and how to retrieve it. When the dropped middle is large, compaction goes one step further and tells it *what* it's missing — by paying a much cheaper model to read the discard pile.
 
-[efferent](https://github.com/xandreeddev/efferent) runs agentic work on its **general** (and **code**) tiers, but keeps a **fast** role — a cheap, low-latency model slot — for one-shot helper calls inside a running turn (the multi-provider routing underneath is a post of its own). Compaction is that tier's flagship customer:
+[efferent](https://github.com/xandreeddev/efferent) runs agentic work on its **general** (and **code**) tiers, but keeps a **fast** role — a cheap, low-latency model slot — for one-shot helper calls inside a running turn (the multi-provider routing underneath is [a post of its own](/posts/llm-provider-runtime-selection/)). Compaction is that tier's flagship customer:
 
 ```ts title="packages/sdk-core/src/usecases/compaction.ts"
 /** Dropped middles smaller than this aren't worth a fast-model summary. */
@@ -263,7 +263,7 @@ The prompt is tuned for what a *model* needs from a summary, which is not what a
 
 The integration is best-effort by construction, and Effect makes both halves of that visible in the types. The `utility` above comes from `Effect.serviceOption(UtilityLlm)` — the service is an *optional* dependency, so compaction works in environments that never wired a utility model (evals, tests, minimal setups). And the `catchAll` means a rate-limited or misconfigured summarizer degrades to the plain marker rather than failing the compression pass; the whole-system Effect tour is a post of its own. Note also where the digest *doesn't* run: the search planner sets `omitted: ''` because two thousand homogeneous grep matches contain nothing a 120-word digest could add — the per-file counts already said it all.
 
-The cost math is almost embarrassing. The summarizer reads at most 24,000 characters (~6k tokens) and writes ~160, once, on a tier priced at small fractions of the main model. The clip it annotates saves ~16k main-model input tokens *per remaining turn* — over a 20-turn tail, a few hundred thousand tokens at the most expensive rate you buy. The digest is a rounding error purchasing insurance on the clip; the spend is still accounted honestly, surfaced through a loop hook into the session's per-role ledger rather than hidden in the noise.
+The cost math is lopsided. The summarizer reads at most 24,000 characters (~6k tokens) and writes ~160, once, on a tier priced at small fractions of the main model. The clip it annotates saves ~16k main-model input tokens *per remaining turn* — over a 20-turn tail, a few hundred thousand tokens at the most expensive rate you buy. The digest is a rounding error purchasing insurance on the clip; the spend is still accounted honestly, surfaced through a loop hook into the session's per-role ledger rather than hidden in the noise.
 
 ## The same rule at every altitude
 
@@ -307,7 +307,7 @@ export interface RunContext {
 
 The spawn machinery reads `toolResultMaxChars` off the ambient context and passes it into every child loop it starts — set the budget once at the top of a run and the entire agent tree honors it, including agents spawned three levels down by code that has never heard of compaction.
 
-And when the *whole conversation* nears the window despite all of this, a different mechanism folds it at a deliberate boundary — one intentional prefix rebuild, then byte-stable again — but checkpoint folding and handoffs are a post of its own.
+And when the *whole conversation* nears the window despite all of this, a different mechanism folds it at a deliberate boundary — one intentional prefix rebuild, then byte-stable again — but checkpoint folding and handoffs are [a post of their own](/posts/context-management/).
 
 ## What it costs
 

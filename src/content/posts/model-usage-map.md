@@ -63,11 +63,11 @@ Notice what the columns are. Not just *where* and *which model* — also *what h
 
 ### The loop is the easy part
 
-One `LanguageModel.generateText` per turn in `agentLoop.ts`, resolved through a router that resolves the calling agent's tier to its model on every call — pinned at run start, so a mid-run `:model` can't yank the model out from under a running fleet; the switch lands on the next run. Sub-agents — spawned scopes working in parallel folders — run *the same loop*, on the **general** tier by default; the repo's phrasing is that **delegation changes the context, not the brain**. The one refinement: a sub-agent that *writes* code can be pinned to the **code** tier, so the brain is *specialized* — a coding-tuned model behind the edits — never *discounted*. Running real edits on a cheaper model would be a quality decision smuggled in as a cost optimization; the `code` tier exists precisely so that decision is explicit and configurable instead of implicit. The loop's internals are a post of its own; for the census all that matters is: one call site, the agentic tiers, and it's the only row whose failure is allowed to fail the turn — it *is* the turn.
+One `LanguageModel.generateText` per turn in `agentLoop.ts`, resolved through a router that resolves the calling agent's tier to its model on every call — pinned at run start, so a mid-run `:model` can't yank the model out from under a running fleet; the switch lands on the next run. Sub-agents — spawned scopes working in parallel folders — run *the same loop*, on the **general** tier by default; the repo's phrasing is that **delegation changes the context, not the brain**. The one refinement: a sub-agent that *writes* code can be pinned to the **code** tier, so the brain is *specialized* — a coding-tuned model behind the edits — never *discounted*. Running real edits on a cheaper model would be a quality decision smuggled in as a cost optimization; the `code` tier exists precisely so that decision is explicit and configurable instead of implicit. The loop's internals are [a post of its own](/posts/agent-loop-anatomy/); for the census all that matters is: one call site, the agentic tiers, and it's the only row whose failure is allowed to fail the turn — it *is* the turn.
 
 ### Call site: the approval judge
 
-When the agent wants to run a bash command that no existing approval rule covers, a classifier gets one question — does this command stay inside the folders the human already granted, doing ordinary development work? — and returns `allow` (skip the dialog) or `prompt` (show it). The judge's reasoning and the path-based grant model are a post of their own; what matters here is its shape *as a call site*:
+When the agent wants to run a bash command that no existing approval rule covers, a classifier gets one question — does this command stay inside the folders the human already granted, doing ordinary development work? — and returns `allow` (skip the dialog) or `prompt` (show it). The judge's reasoning and the path-based grant model are [a post of their own](/posts/bash-approval-rules/); what matters here is its shape *as a call site*:
 
 ```ts title="packages/sdk-core/src/usecases/autoApproval.ts"
 export const judgeApproval = (
@@ -183,7 +183,7 @@ export class UtilityLlm extends Context.Tag('@xandreed/sdk-core/UtilityLlm')<
 >() {}
 ```
 
-Note what the port *doesn't* offer: no tools, no streaming, no message history. A helper call that needs those isn't a helper call — it's agentic work trying to sneak out of the general/code tiers, and the interface refuses to carry it. The return type matters too: `UtilityCompletion` is `{ text, usage? }` — usage comes back with every completion *so that each tier's spend is countable*. The live implementation resolves the role's selection per call, pulls the key from the auth store per call, and builds a provider client scoped to exactly that one request — so a mid-session `:set fastModel` or fresh login applies on the next helper call with no rebuild. (How a selection becomes a provider client is the routing story, a post of its own.)
+Note what the port *doesn't* offer: no tools, no streaming, no message history. A helper call that needs those isn't a helper call — it's agentic work trying to sneak out of the general/code tiers, and the interface refuses to carry it. The return type matters too: `UtilityCompletion` is `{ text, usage? }` — usage comes back with every completion *so that each tier's spend is countable*. The live implementation resolves the role's selection per call, pulls the key from the auth store per call, and builds a provider client scoped to exactly that one request — so a mid-session `:set fastModel` or fresh login applies on the next helper call with no rebuild. (How a selection becomes a provider client is the routing story, [a post of its own](/posts/llm-provider-runtime-selection/).)
 
 The deeper benefit of role names isn't even the swappability — it's that they force the classification conversation. The repo's history has a commit retagging which jobs count as `fast` exactly because the roles made someone argue about it. "Which role does this new call get?" is a question a reviewer can ask in five seconds. "Which of our four hardcoded model ids should this new file copy?" is not.
 
@@ -229,16 +229,6 @@ export interface SessionStats {
   /** Billed tokens per model role (general / code / fast). */
   readonly byRole: RoleSpend // [!code highlight]
 }
-
-/** Add billed tokens to one role's running spend. */
-export const accumulateRoleSpend = (
-  s: SessionStats,
-  role: keyof RoleSpend,
-  billed: number,
-): SessionStats => ({
-  ...s,
-  byRole: { ...s.byRole, [role]: s.byRole[role] + billed },
-})
 ```
 
 Every row of the census names its route into this ledger: root-loop and reasoning sub-agent usage accumulate under `general`, code-writing spawns under `code`; the judge and the title daemon book their own usage directly; the compaction digests report through a loop hook that sub-agents forward to their parent, so a digest three spawns deep still lands in the session's `fast` bucket. The ledger is keyed by role — never by model — because "the helpers cost a third of the bill" is an actionable sentence and a flat token total is not. (What the UI does with all this is a post of its own; the census only cares that every call site has a destination.)

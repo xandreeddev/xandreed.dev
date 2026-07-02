@@ -1,6 +1,6 @@
 ---
 title: 'Your eval has no database; the trace is the dataset'
-description: "Once the agent loop is fully traced, evals need no separate store — the runner discards its own return value and rebuilds the scorecard by reading the span tree. Tokens, steps, and cost come from the same trace the dashboards do."
+description: "Once the agent loop is fully traced, the eval runner needs no store of its own — it discards its return value and rebuilds the scorecard from the same span tree the dashboards read."
 pubDate: 2026-09-04
 tags: [evals, effect, observability]
 series:

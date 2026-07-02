@@ -9,7 +9,7 @@ series:
 draft: true
 ---
 
-Every coding agent has the same anatomy at the bottom: a loop that sends a pile of text to a model, reads the reply, runs some tools, appends the tool results to the pile, and sends the pile again. The pile is the **context** — everything the model can see while producing its next token, and the agent's entire working memory, because the model itself keeps nothing between calls. (Why a stateless model makes that transcript the *only* memory, and how it's persisted as an append-only log, is a post of its own.) This post starts a layer up — with what happens to the pile as it grows.
+Every coding agent has the same anatomy at the bottom: a loop that sends a pile of text to a model, reads the reply, runs some tools, appends the tool results to the pile, and sends the pile again. The pile is the **context** — everything the model can see while producing its next token, and the agent's entire working memory, because the model itself keeps nothing between calls. (Why a stateless model makes that transcript the *only* memory, and how it's persisted as an append-only log, is [a post of its own](/posts/conversation-as-memory/).) This post starts a layer up — with what happens to the pile as it grows.
 
 That pile lives inside a hard budget called the **context window** — the maximum number of tokens (roughly, word fragments; about four characters each) a model accepts in one request. Window sizes sound generous in 2026 — frontier models take a million tokens — and they are not generous at all, because an agent is a machine for filling them. One `cat` of a build log is 80,000 characters. One enthusiastic `grep` is 40,000. Every tool result lands in the pile and *stays* there, re-sent on every subsequent call, because the loop is append-and-resend. Left alone, a long session doesn't fail loudly; it degrades — the model starts forgetting constraints from hour one, re-reading files it already read, paying more per turn for worse answers — and then it hits the wall and the session is simply over.
 
@@ -56,52 +56,13 @@ The bodies stay on disk. The toolkit gains one tool, `read_skill({ name })`, tha
 
 ### Instruction files: discovered, ordered, capped
 
-The second admitted artifact is workspace guidance — the `AGENT.md` convention, where a repo carries durable instructions for any agent working in it ("run `bun test`, not `npm test`; never touch `generated/`"). These *do* earn permanent seats: they're rules, and a rule the model can't see is a rule it will break. But the discovery is hierarchical and the budget is explicit:
-
-```ts title="packages/cli/src/usecases/discoverInstructionFiles.ts"
-/** Per-file char cap in the rendered prompt. */
-export const MAX_INSTRUCTION_FILE_CHARS = 4_000
-/** Total char budget for the whole '# Instructions' section. */
-export const MAX_TOTAL_INSTRUCTION_CHARS = 12_000 // [!code highlight]
-
-// Order: root → … → cwd → homeDir. Broad guidance first, narrowing in.
-const instructionSearchPath = (cwd: string, homeDir: string): ReadonlyArray<string> => {
-  const chain: string[] = []
-  let dir = cwd
-  while (true) {
-    chain.push(dir)
-    const parent = dirname(dir)
-    if (parent === dir) break
-    dir = parent
-  }
-  chain.reverse()
-  if (!chain.includes(homeDir)) chain.push(homeDir)
-  return chain
-}
-```
-
-The walk collects `AGENT.md` and `AGENT.local.md` from the filesystem root down to the working directory, then the home directory — so the rendered section reads broad-then-narrow, monorepo conventions before package quirks. Duplicate content is deduped (people copy the same AGENT.md between repos; it should cost its tokens once), each file is labeled with the directory it came from so the model knows *which guidance applies where*, and the caps are hard: 4,000 characters per file, 12,000 for the whole section — about 3,000 tokens, worst case. A workspace can't accidentally spend a fifth of the window on prose just because someone wrote an enthusiastic README-shaped rulebook. Past the budget, the section says so out loud — `_Additional instruction content omitted…_` — rather than silently dropping files.
+The second admitted artifact is workspace guidance — the `AGENT.md` convention, where a repo carries durable instructions for any agent working in it ("run `bun test`, not `npm test`; never touch `generated/`"). These *do* earn permanent seats: they're rules, and a rule the model can't see is a rule it will break. But the seats are rationed. Discovery walks `AGENT.md` and `AGENT.local.md` from the filesystem root down to the working directory, then the home directory — so the rendered section reads broad-then-narrow, monorepo conventions before package quirks. Duplicate content is deduped (people copy the same AGENT.md between repos; it should cost its tokens once), each file is labeled with the directory it came from so the model knows *which guidance applies where*, and the caps are hard: 4,000 characters per file, 12,000 for the whole section — about 3,000 tokens, worst case. A workspace can't accidentally spend a fifth of the window on prose just because someone wrote an enthusiastic README-shaped rulebook. Past the budget, the section says so out loud — `_Additional instruction content omitted…_` — rather than silently dropping files.
 
 ### SCOPE.md: context attached to a place
 
-The third instance is the quietest. A folder can carry a `SCOPE.md` whose body is ambient context for that folder — the local conventions of one package. It's admitted into a prompt only when an agent is actually *scoped there* (sub-agents in [efferent](https://github.com/xandreeddev/efferent) run confined to a folder; a root `SCOPE.md` seeds the main prompt the same way):
+The third instance is the quietest. A folder can carry a `SCOPE.md` whose body is ambient context for that folder — the local conventions of one package. It's admitted into a prompt only when an agent is actually *scoped there* (sub-agents in [efferent](https://github.com/xandreeddev/efferent) run confined to a folder; a root `SCOPE.md` seeds the main prompt the same way). No index, no tool — presence in the folder is the whole relevance test. (The full extension mechanism — skills, instruction files, SCOPE.md, and how to write ones that earn their tokens — is a post of its own.)
 
-```ts title="packages/sdk-core/src/usecases/discoverScopeTree.ts"
-/** Ambient folder context: the body of a folder's SCOPE.md, injected into
- *  any agent that runs scoped to that folder. */
-export const getScopePromptBody = (folder: string) =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem
-    const read = yield* fs.read(resolve(folder, 'SCOPE.md')).pipe(
-      Effect.catchAll(() => Effect.succeed(null)), // [!code highlight]
-    )
-    if (read === null) return null
-    const body = stripFrontmatter(read.content)
-    return body.trim().length > 0 ? body : null
-  })
-```
-
-Note what these three mechanisms have in common, because it's the actual lesson: in every case, the *decision about relevance* is made structurally — by name matching, by directory hierarchy, by physical location — instead of by stuffing everything in and hoping the model's attention sorts it out. Attention over a bloated context is exactly what degrades first in long sessions. Admission control isn't (only) about cost; it's about keeping the signal-to-noise of the working memory high enough that the rules which *are* present still bind. (The reads are also all failure-proof, the `catchAll` above — a malformed skill or an unreadable AGENT.md silently contributes nothing rather than breaking the agent. Ambient context must never be load-bearing for liveness.)
+Note what these three mechanisms have in common, because it's the actual lesson: in every case, the *decision about relevance* is made structurally — by name matching, by directory hierarchy, by physical location — instead of by stuffing everything in and hoping the model's attention sorts it out. Attention over a bloated context is exactly what degrades first in long sessions. Admission control isn't (only) about cost; it's about keeping the signal-to-noise of the working memory high enough that the rules which *are* present still bind. (The reads are also all failure-proof — a malformed skill or an unreadable AGENT.md silently contributes nothing rather than breaking the agent. Ambient context must never be load-bearing for liveness.)
 
 ## Compression at the edges
 

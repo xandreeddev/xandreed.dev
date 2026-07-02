@@ -72,7 +72,7 @@ class LanguageModel extends Context.Tag('LanguageModel')<LanguageModel, {
 }>() {}
 ```
 
-Everything interesting follows from the tag. Implementations are layers, so provider choice is wiring, not plumbing through forty call sites. Tests provide a scripted model and run the *real* application logic against canned replies — no mocking framework, no HTTP interception. Evals provide the live model and swap the side-effecting services instead. And because `@effect/ai` ships this tag as a shared vocabulary, the ecosystem's adapters all speak it — in [efferent](https://github.com/xandreeddev/efferent) the live layer is a router that re-resolves the provider on every call, which is how a `:model` switch mid-session applies to the very next message. The modularity isn't an architecture you maintain; it's what services-as-values *do*.
+Everything interesting follows from the tag. Implementations are layers, so provider choice is wiring, not plumbing through forty call sites. Tests provide a scripted model and run the *real* application logic against canned replies — no mocking framework, no HTTP interception. Evals provide the live model and swap the side-effecting services instead. And because `@effect/ai` ships this tag as a shared vocabulary, the ecosystem's adapters all speak it — in [efferent](https://github.com/xandreeddev/efferent) the live layer is [a router that re-resolves the provider on every call](/posts/llm-provider-runtime-selection/), which is how a `:model` switch mid-session applies to the very next message. The modularity isn't an architecture you maintain; it's what services-as-values *do*.
 
 ## Concurrency you can put a number on
 

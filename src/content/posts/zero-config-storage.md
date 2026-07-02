@@ -247,4 +247,4 @@ Here's the position this architecture takes, stated as advice. The database behi
 
 The whole policy fits in a sentence, and most local tools could adopt it wholesale: default to a SQLite file in a dotdir, carry your migrations inside the artifact, run them at boot over a single shared stack, and leave one URL-shaped variable as the door to a real server. None of it is exotic — `parseDbTarget` is fourteen lines — and the payoff is a quickstart with no prerequisites section.
 
-The gauntlet version survives because we build tools the way we deploy services, and a `DATABASE_URL` check feels like rigor. It isn't. It's a decision you declined to make, exported as homework. Make the decision. Ship the file.
+That first-run gauntlet survives because we build tools the way we deploy services, and a `DATABASE_URL` check feels like rigor. It isn't. It's a decision you declined to make, exported as homework. Make the decision. Ship the file.

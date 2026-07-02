@@ -1,6 +1,6 @@
 ---
 title: 'The transcript is the memory'
-description: 'A model call is stateless, so the conversation transcript is the agent''s entire memory. Keep the whole history as an append-only log — and that one invariant is what makes caching, compression, and resume all work.'
+description: 'The model remembers nothing between calls, so the transcript is the agent''s entire memory — an append-only log whose one invariant makes caching, compression, and resume all work.'
 pubDate: 2026-07-07
 tags: [agents, ai, effect]
 series:
@@ -140,7 +140,7 @@ Three features, one invariant. Break "never rewrite the prefix" and you don't lo
 
 ## Where this log stops, and the next one begins
 
-What I've described is the *linear* conversation: one append-only sequence with fold points, in `ConversationStore`. The moment the agent spawns a sub-agent, that investigation gets its own message log in a *separate, branching* store — `ContextTreeStore`, a tree of runs rather than a line, no shared tables. Why a sub-agent's finished transcript is capital worth persisting and resuming is a post of its own. And both stores ride the same SQLite-by-default substrate that's there thirty seconds after `npm i -g`, with Postgres one env var away — which is, you guessed it, a post of its own.
+What I've described is the *linear* conversation: one append-only sequence with fold points, in `ConversationStore`. The moment the agent spawns a sub-agent, that investigation gets its own message log in a *separate, branching* store — `ContextTreeStore`, a tree of runs rather than a line, no shared tables. Why a sub-agent's finished transcript is capital worth persisting and resuming is [a post of its own](/posts/persistent-context-tree/). And both stores ride the same SQLite-by-default substrate that's there thirty seconds after `npm i -g`, with Postgres one env var away — which is, you guessed it, a post of its own.
 
 ## What it costs
 
@@ -149,7 +149,7 @@ Honesty section. "Keep everything, forever, append-only" has bills attached.
 - **Storage only grows.** A long-lived conversation is a strictly increasing table. For a local coding agent this is rounding-error cheap (text compresses, disks are large), but it is monotonic — nothing here ever reclaims space, by design.
 - **You re-send the active history every turn.** Stateless calls mean the per-turn token bill scales with the loaded history. Caching softens the steady state and checkpoints cap the growth, but a *cold* resume re-pays for the whole active prefix once, before the cache warms.
 - **You can't edit a message in place.** A correction is a new row the model reads *in sequence*, not a clean redaction of the mistake. That's auditable truth over a tidy buffer — usually the right trade, occasionally the annoying one.
-- **The log is only as trustworthy as its codec.** A row that won't decode has to fail loudly, as a typed error, not silently vanish from the history. The invariant is exactly as strong as the parse that enforces it — which is why that one `JSON.parse` got its own post.
+- **The log is only as trustworthy as its codec.** A row that won't decode has to fail loudly, as a typed error, not silently vanish from the history. The invariant is exactly as strong as the parse that enforces it — which is why that one `JSON.parse` got [its own post](/posts/where-exceptions-live/).
 
 ## The memory is a list
 

@@ -125,9 +125,9 @@ The `~` prefix renders in the UI until the next provider reply replaces the gues
 
 ## Attribute by role: helper calls are real spend
 
-Modern agents don't run one model; they run a *cast*. In [efferent](https://github.com/xandreeddev/efferent), agentic work runs on **general** — with a dedicated **code** tier for sub-agents that write code — and every helper call, latency-sensitive or background, runs on **fast** — which concrete model fills each role is runtime selection and a post of its own. This post owns the other half of that design: their accounting. Because the moment a feature can quietly call a model, you have spend with no user action attached, and the lazy path — letting it hide inside the feature that made it — is how an agent's bill stops being explainable.
+Modern agents don't run one model; they run a *cast*. In [efferent](https://github.com/xandreeddev/efferent), agentic work runs on **general** — with a dedicated **code** tier for sub-agents that write code — and every helper call, latency-sensitive or background, runs on **fast** — which concrete model fills each role is runtime selection and a post of its own, and the full census of call sites and tiers is [a map of its own](/posts/model-usage-map/). This post owns the other half of that design: their accounting. Because the moment a feature can quietly call a model, you have spend with no user action attached, and the lazy path — letting it hide inside the feature that made it — is how an agent's bill stops being explainable.
 
-The ledger is almost embarrassingly small. That's the point — attribution is a data shape, not a subsystem:
+The ledger is three fields, and that's the point — attribution is a data shape, not a subsystem:
 
 ```ts title="packages/cli/src/cli/presentation/sidePane.ts"
 /** Billed tokens (input + output) accumulated per model role this session. */
@@ -267,7 +267,7 @@ export const cachePercent = (cacheRead: number, input: number): number | undefin
   input > 0 ? Math.round((Math.min(cacheRead, input) / input) * 100) : undefined // [!code highlight]
 ```
 
-Cache reads are billed at a fraction of full input price, so on long sessions this single number *is* the difference between a reasonable bill and a painful one. How the cache stays warm — byte-stable prefixes, never rewriting history — is a post of its own; the visibility point is simpler: a number you can see is a number you notice *regressing*. When `86% cached` drops to `0%` after a change to prompt assembly, you've caught a cost regression at the status bar, the same turn it happened — not at the end of the month, aggregated into noise.
+Cache reads are billed at a fraction of full input price, so on long sessions this single number *is* the difference between a reasonable bill and a painful one. How the cache stays warm — byte-stable prefixes, never rewriting history — is [a post of its own](/posts/prompt-caching/); the visibility point is simpler: a number you can see is a number you notice *regressing*. When `86% cached` drops to `0%` after a change to prompt assembly, you've caught a cost regression at the status bar, the same turn it happened — not at the end of the month, aggregated into noise.
 
 ## Budgets close the loop
 

@@ -145,7 +145,7 @@ Every log line emitted anywhere inside that run — thirty calls deep, inside a 
 
 Here's the payoff the first three sections have been setting up. The instrumented core — the spans, the metric records, the logs — does not name a backend anywhere. It can't, because a `withSpan` or a `Metric.update` is just a description. Something has to provide a tracer and a meter for any of it to leave the process, and that something is a **layer**, supplied once at the composition root.
 
-efferent's exporter is the Effect-native OTLP layer — no heavyweight OpenTelemetry SDK, just an HTTP POST of the serialized spans and metrics:
+[efferent](https://github.com/xandreeddev/efferent)'s exporter is the Effect-native OTLP layer — no heavyweight OpenTelemetry SDK, just an HTTP POST of the serialized spans and metrics:
 
 ```ts title="packages/sdk-adapters/src/telemetry/otlp.ts"
 export const OtlpTelemetryLive: Layer.Layer<never> = Layer.unwrapEffect(

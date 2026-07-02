@@ -26,7 +26,7 @@ export type ContextNodeId = typeof ContextNodeId.Type
 
 `ContextNodeId.Type` is `string & Brand<"ContextNodeId">`. At runtime it's the same string it always was — the brand is erased. At compile time it's a distinct type: a function asking for a `ContextNodeId` will reject a bare `string`, and a function asking for a `string` will happily take the id (the subtype relationship only runs one way). You've turned a structural type into a **nominal** one for exactly the values where identity matters, and paid nothing in bytes to do it.
 
-Effect's `Schema.brand` does this *and* gives you a decoder. The same declaration that defines the type defines `Schema.decodeUnknown(ContextNodeId)` — a parse that validates the UUID shape and hands back a value the type system now trusts. The brand and the runtime check are one artifact; you can't get the type without going through the validation. (Typed failures from that decode are [their own discipline](https://github.com/xandreeddev/efferent), and a post of its own.)
+Effect's `Schema.brand` does this *and* gives you a decoder. The same declaration that defines the type defines `Schema.decodeUnknown(ContextNodeId)` — a parse that validates the UUID shape and hands back a value the type system now trusts. The brand and the runtime check are one artifact; you can't get the type without going through the validation. (Typed failures from that decode are their own discipline — [a post of its own](/posts/where-exceptions-live/).)
 
 ## The bug a brand prevents
 
@@ -88,7 +88,7 @@ export type ToolCallId = string & Brand.Brand<"ToolCallId">
 export const ToolCallId = Brand.nominal<ToolCallId>()
 ```
 
-And a third axis cutting across both: **refined** vs. plain. A refined brand carries a real invariant — `Schema.UUID`, a `provider:modelId` shape, `NonNegativeInt`, an `http(s)` URL — and the decoder enforces it. A plain brand only enforces *which type this is*. Reach for refined where there's an invariant worth the check; reach for nominal where the only goal is "don't swap me with that other string." A bonus of refined brands: `Arbitrary.make(schema)` derives a property-test generator straight from the brand, so the invariant gets [fuzzed for free](https://github.com/xandreeddev/efferent) — also a post of its own.
+And a third axis cutting across both: **refined** vs. plain. A refined brand carries a real invariant — `Schema.UUID`, a `provider:modelId` shape, `NonNegativeInt`, an `http(s)` URL — and the decoder enforces it. A plain brand only enforces *which type this is*. Reach for refined where there's an invariant worth the check; reach for nominal where the only goal is "don't swap me with that other string." A bonus of refined brands: `Arbitrary.make(schema)` derives a property-test generator straight from the brand, so the invariant gets [fuzzed for free](/posts/property-testing-fast-check/) — also a post of its own.
 
 ## A rubric for what to brand
 

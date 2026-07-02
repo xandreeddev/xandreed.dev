@@ -200,7 +200,7 @@ await Effect.runPromise(greeting(1).pipe(Effect.provide(UsersApiLive))) // prod
 await Effect.runPromise(greeting(1).pipe(Effect.provide(UsersApiTest))) // tests — no mocking library
 ```
 
-Providing *subtracts* from `R`; a fully provided program has `R = never` and is the only thing a runtime will accept. Forget a dependency and it's a compile error at the one line where wiring happens. This scales further than it looks — whole applications are wired as a single layer expression — but that story deserves its own post.
+Providing *subtracts* from `R`; a fully provided program has `R = never` and is the only thing a runtime will accept. Forget a dependency and it's a compile error at the one line where wiring happens. This scales further than it looks — whole applications are wired as a single layer expression — but that story has [a post of its own](/posts/effect-semantics-layers-concurrency/).
 
 ## What to ignore at first
 
