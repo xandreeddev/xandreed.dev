@@ -158,8 +158,8 @@ The first refuses the *next* spawn — and notice it names the replacement strat
 The second string handles the harder case: a sub-agent that was already running when the pool hit zero stops at its next turn boundary — and its final text, at that moment, is mid-thought. The danger isn't the missing work; it's that the parent can't tell. A sub-agent's one-line summary is what the `run_agent` tool *returns*, and an unmarked partial summary reads exactly like a deliverable:
 
 ```ts title="packages/sdk-core/src/usecases/buildScopeRuntime.ts"
-// A budget OR step-cap stop is an *ok* outcome with a partial result —
-// say so, so the parent model knows not to trust it as complete.
+// A budget OR step-cap stop is a PARTIAL outcome — the typed status carries
+// the truth for machines; the note keeps it readable where the model reads.
 const stopNote = stoppedByBudget
   ? BUDGET_STOP_NOTE
   : result.stoppedAtMaxSteps
@@ -170,7 +170,7 @@ const summary = stopNote !== null
   : result.finalText
 ```
 
-The step-cap sibling says the same thing about a different limit: *"[stopped early: the step limit was reached — this result is partial]"*. Both convert *confidently incomplete* into *explicitly incomplete*, at exactly the place the parent reads — the cheapest possible insurance against the worst sub-agent failure mode, which is a parent building on work that never finished.
+The step-cap sibling says the same thing about a different limit: *"[stopped early: the step limit was reached — this result is partial]"*. Both convert *confidently incomplete* into *explicitly incomplete*, at exactly the place the parent reads — the cheapest possible insurance against the worst sub-agent failure mode, which is a parent building on work that never finished. (Since this was drafted, the caveat gained a machine-readable twin: every run now ends with a typed stop reason — `budget`, `step-cap`, `stall`, `interrupt`, … — and an honest `partial` status riding the run's terminal record beside the summary; the note stays, because the status is for programs and the summary is still what the parent *model* reads.)
 
 ### The compaction marker
 

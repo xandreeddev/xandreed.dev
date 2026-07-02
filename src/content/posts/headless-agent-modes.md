@@ -99,7 +99,9 @@ export type AgentEvent = // [!code highlight]
   | {
       readonly type: 'subagent_end'
       readonly name: string
-      readonly ok: boolean
+      readonly ok: boolean // legacy boolean — kept so old consumers keep decoding
+      readonly outcome?: 'ok' | 'partial' | 'error' | 'killed' // the honest terminal status
+      readonly reason?: StopReasonKind // WHY: 'budget' | 'step-cap' | 'stall' | 'interrupt' | …
       readonly summary: string
       readonly filesChanged: ReadonlyArray<string>
       readonly nodeId?: string
@@ -121,9 +123,10 @@ export type AgentEvent = // [!code highlight]
       readonly reasons: ReadonlyArray<string> // …
     }
   | {
-      readonly type: 'agent_end'
+      readonly type: 'agent_end' // the root turn's terminal event — outcome honesty included
       readonly finalText: string
-      readonly messages: ReadonlyArray<AgentMessage>
+      readonly outcome?: 'ok' | 'partial' | 'error' | 'killed'
+      readonly reason?: StopReasonKind
     }
   | { readonly type: 'error'; readonly message: string }
   | {
@@ -132,6 +135,15 @@ export type AgentEvent = // [!code highlight]
       readonly attempt: number
       readonly maxAttempts: number
       readonly delayMs: number
+    }
+  | {
+      readonly type: 'agent_health' // a running agent's live state — edge-triggered, never a heartbeat
+      readonly nodeId: string
+      readonly state:
+        | 'starting' | 'generating' | 'tool-running'
+        | 'retrying' | 'awaiting-approval' | 'waiting-on-agents'
+      readonly lastActivityAt: number
+      readonly detail?: string // short human line: the running tool, '429 2/3 — next in 8s', …
     }
   | {
       readonly type: 'bg_output' // a background shell process wrote a chunk
@@ -166,7 +178,7 @@ export type AgentEvent = // [!code highlight]
     }
 ```
 
-Read it as a narration grammar. A run is a sequence of turns (`turn_start`); each turn produces prose (`assistant_message` — with the model's reasoning and token usage when available) and tool activity (`tool_call_start` / `tool_call_end`, paired by the provider's call id, because two same-named calls in one turn share a name but not an id). Sub-agents open and close their own bracketed stories (`subagent_start` / `subagent_end`, with a summary and the files they changed), nested via `parentNodeId` when a sub-agent spawns its own. Skills loading and helper-tier LLM calls — the fast-tier background work, like compaction digests — get their own lines so a consumer can keep an honest spend ledger. Approvals surface as data too (`approval_needed` and, when nobody's watching, `needs_human` with `parked: true`), and `board_note` carries inter-agent fleet chatter — both consumed below. The vocabulary has kept growing the additive way since: `learned` and `gate` narrate the self-improving loop's distiller and the fleet's mandatory verify gate, `llm_retry` makes a provider backoff visible instead of a silent hang, `bg_output` streams a background shell's chunks. And `agent_end` closes the run with the final text plus the full message transcript.
+Read it as a narration grammar. A run is a sequence of turns (`turn_start`); each turn produces prose (`assistant_message` — with the model's reasoning and token usage when available) and tool activity (`tool_call_start` / `tool_call_end`, paired by the provider's call id, because two same-named calls in one turn share a name but not an id). Sub-agents open and close their own bracketed stories (`subagent_start` / `subagent_end`, with a summary, the files they changed, and — newly — an honest `outcome` plus the compact `reason` it stopped: a budget-capped run says `partial`, never a silent success; both fields are schema-optional and the legacy `ok` boolean stays, so old consumers keep decoding), nested via `parentNodeId` when a sub-agent spawns its own. Skills loading and helper-tier LLM calls — the fast-tier background work, like compaction digests — get their own lines so a consumer can keep an honest spend ledger. Approvals surface as data too (`approval_needed` and, when nobody's watching, `needs_human` with `parked: true`), and `board_note` carries inter-agent fleet chatter — both consumed below. The vocabulary has kept growing the additive way since: `learned` and `gate` narrate the self-improving loop's distiller and the fleet's mandatory verify gate, `llm_retry` makes a provider backoff visible instead of a silent hang, `bg_output` streams a background shell's chunks, and `agent_health` carries each running sub-agent's live state — edge-triggered on transitions, never a heartbeat — so a consumer can tell `retrying` from dead. And `agent_end` closes the run with the final text plus the same outcome honesty as `subagent_end`; the full message transcript it once carried is gone from the wire (megabytes per turn once events rode the daemon's stream, and nothing ever consumed it).
 
 Two design choices in that union do most of the work. First, **everything is data, nothing is presentation** — no color, no layout, no strings pre-formatted for a terminal. `args` and `result` are `unknown` because they're tool-shaped, not display-shaped. Second, the events carry enough identity (`turnIndex`, call ids, `nodeId`) that a consumer can reconstruct *structure* — which call belongs to which turn belongs to which sub-agent — instead of just receiving a flat log.
 
@@ -289,12 +301,12 @@ JSON mode is print mode's control flow with the most literal fold imaginable: ev
 {"type":"tool_call_start","turnIndex":0,"id":"call_x7Qf","toolName":"read_file","args":{"path":"packages/cli/src/main.ts"}}
 {"type":"tool_call_end","turnIndex":0,"id":"call_x7Qf","toolName":"read_file","ok":true,"result":{"path":"packages/cli/src/main.ts","content":"…","totalLines":863,"truncated":false}}
 {"type":"assistant_message","turnIndex":1,"text":"Three exports are never imported…","usage":{"inputTokens":18412,"outputTokens":231,"totalTokens":18643,"cacheReadTokens":15890}}
-{"type":"agent_end","finalText":"Three exports are never imported: …","messages":[…]}
+{"type":"agent_end","finalText":"Three exports are never imported: …","outcome":"ok","reason":"completed"}
 ```
 
-The renderer, in full, is the `consumeEvents` while-loop with its switch replaced by one line — `process.stdout.write(JSON.stringify(event) + '\n')`. The entire mode file is 157 lines, and most of them are the shared scaffolding every mode has (decode the conversation id, build the queue and hooks, run, drain).
+The renderer, in full, is the `consumeEvents` while-loop with its switch replaced by one line — `process.stdout.write(JSON.stringify(event) + '\n')`. The entire mode file is 180 lines, and most of them are the shared scaffolding every mode has (decode the conversation id, build the queue and hooks, run, drain).
 
-This is the mode for everything that wants to *measure* an agent rather than watch one: dashboards, run archives, cost accounting off the `usage` fields, scripts that fail a pipeline when `tool_call_end` events show `ok: false`. Note `agent_end` carries the full message transcript — heavyweight, but it means a JSONL archive of a run is *complete*: you can reconstruct the conversation later without the database.
+This is the mode for everything that wants to *measure* an agent rather than watch one: dashboards, run archives, cost accounting off the `usage` fields, scripts that fail a pipeline when a `subagent_end` reports `partial` or `tool_call_end` events show `ok: false`. Note the last line's honesty: `agent_end` used to haul the full message transcript here, and doesn't anymore — the field had zero consumers and weighed megabytes per turn once the daemon streamed events over a wire, and reconstruction was always the store's job (`--resume` below). What rides instead is the terminal `outcome` and `reason`, so a pipeline can tell a completed run from one that hit its step cap without parsing prose. One wiring note earned by a live acceptance run: `agent_health` and `board_note` are published by the fleet bus rather than the loop's hooks, and the headless modes silently dropped them at first — print, JSON, and RPC now offer bus events onto the same queue as hook events, so this stream carries the full fleet story too.
 
 ## Client four: `--mode rpc` — the agent as a server
 
@@ -374,11 +386,11 @@ Now the claim in the title. "Headless support" sounds like a feature — a miles
 
 | File | Lines | What it is |
 | --- | --- | --- |
-| `sdk-core …/AgentEvent.ts` | 218 | the vocabulary: one schema union, doubling as the daemon's wire payload |
-| `cli …/events.ts` | 154 | the adapter: one publish per hook — a queue for the modes, a ledger for the daemon |
-| `modes/json.ts` | 157 | JSONL renderer |
-| `modes/print.ts` | 196 | one-shot renderer, stdout/stderr split |
-| `modes/rpc.ts` | 283 | JSON-RPC server (half is protocol plumbing: framing, error codes) |
+| `sdk-core …/AgentEvent.ts` | 256 | the vocabulary: one schema union, doubling as the daemon's wire payload |
+| `cli …/events.ts` | 160 | the adapter: one publish per hook — a queue for the modes, a ledger for the daemon |
+| `modes/json.ts` | 180 | JSONL renderer |
+| `modes/print.ts` | 242 | one-shot renderer, stdout/stderr split |
+| `modes/rpc.ts` | 298 | JSON-RPC server (half is protocol plumbing: framing, error codes) |
 | `modes/tui.ts` | 42 | the seam; the actual TUI hangs off the same contract |
 
 Every mode has the same skeleton — decode a conversation id, make a queue, fork the consumer (the fold), wire hooks, run the agent, drain with the sentinel — and differs only in the fold. The loop's files were not touched to add any of them; `runAgent`'s signature never changed. That's the test of whether something is a feature or a property: features show up as diffs across the system, properties show up as new files beside old ones.

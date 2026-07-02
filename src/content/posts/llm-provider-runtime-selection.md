@@ -16,7 +16,7 @@ The receipts come from [efferent](https://github.com/xandreeddev/efferent), a co
 
 ## The idiomatic answer answers the wrong question
 
-Quick vocabulary, because the whole argument turns on it. In Effect, a **service** is an interface declared as a typed key (`Context.Tag`) with no implementation attached; a **layer** is a recipe that supplies the implementation; and the **composition root** is the one place — the program's entry point — where layers get assembled and provided. The deep semantics of all that are a post of its own; the conclusion that matters here is one line from it: *layers answer "the program is different"; state answers "the request is different."*
+Quick vocabulary, because the whole argument turns on it. In Effect, a **service** is an interface declared as a typed key (`Context.Tag`) with no implementation attached; a **layer** is a recipe that supplies the implementation; and the **composition root** is the one place — the program's entry point — where layers get assembled and provided. The deep semantics of all that are [a post of its own](/posts/effect-semantics-layers-concurrency/); the conclusion that matters here is one line from it: *layers answer "the program is different"; state answers "the request is different."*
 
 For LLMs, the service already exists — `@effect/ai` ships a `LanguageModel` tag with `generateText`, `streamText`, and `generateObject` — and each provider package ships a layer for it. So the standard multi-provider answer writes itself, and it's the one I shipped first:
 
@@ -271,6 +271,8 @@ const key = yield* authStore.resolveKey(sel.provider).pipe(
 ```
 
 Two deliberate choices in five lines. First, this *fails* rather than degrading to "no credential" — masking a dead refresh as a missing key would read as the model silently vanishing from the session, which is the kind of bug users can't even report coherently. Second, the message is composed where the knowledge is: the auth store is the only component that knows this was a refresh failure and knows the remedy, so the `AuthError` it raises carries the literal instruction — `run :login <provider> again` — and the router just forwards it into the error type every mode (TUI, one-shot, JSON-RPC) already renders. The user sees a sentence telling them what to type. The error channel as product surface, not plumbing.
+
+One more answer has landed at this seam since: **failover**. When a call dies with a *persistent* provider defect — the account is out of quota for hours, or this model rejects the request's shape — retrying in place is pointless, so the router retries the call once on a fallback selection: a code-role call falls back to the run's pinned general model, a general call to a human-configured `fallbackModel` setting — never a model the agent chose, and unset means the error surfaces as above. The switch is loud by design — a notice in the UI, `llm.failover.*` annotations on the call's trace, a note folded into the run's outcome — and auth failures still refuse to soften, for the reason above: credentials are the human's to fix. The defect taxonomy and the failover ladder are a later post.
 
 ## Roles: the same move, one level up
 
